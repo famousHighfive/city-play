@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\EnigmeController;
+use App\Http\Controllers\EnvironmentController;
+use App\Http\Controllers\PlaceController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +30,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::resource('environments', EnvironmentController::class);
+});
+Route::middleware('auth')->group(function () {
+    Route::resource('places', PlaceController::class);
+});
+Route::middleware('auth')->group(function () {
+    Route::resource('enigmes', EnigmeController::class);
 });
 
 require __DIR__.'/auth.php';

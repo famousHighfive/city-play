@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Environment;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class EnvironmentController extends Controller
 {
@@ -12,7 +13,10 @@ class EnvironmentController extends Controller
      */
     public function index()
     {
-        //
+        $environments = Environment::all();
+        return Inertia::render('Admin/Environments/Index', [
+            'environments' => $environments
+        ]);
     }
 
     /**
@@ -20,16 +24,25 @@ class EnvironmentController extends Controller
      */
     public function create()
     {
-        //
+        return Inertia::render('Admin/Environments/Create');
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
-    {
-        //
-    }
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'nom' => 'required|string|max:150',
+        'description' => 'nullable|string',
+        'actif' => 'required|boolean',
+    ]);
+
+    Environment::create($validated);
+
+    return redirect()->route('environments.index');
+}
+
 
     /**
      * Display the specified resource.
