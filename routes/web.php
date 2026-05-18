@@ -5,6 +5,7 @@ use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\PlaceController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
+use App\Http\Controllers\GameController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -34,6 +35,11 @@ Route::middleware('auth')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::resource('environments', EnvironmentController::class);
+
+    // Route pour initialiser et commencer une nouvelle partie
+Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
+    ->name('game.start');
+
 });
 Route::middleware('auth')->group(function () {
     Route::resource('places', PlaceController::class);
@@ -41,5 +47,17 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::resource('enigmes', EnigmeController::class);
 });
+
+
+Route::middleware(['auth'])->group(function () {
+    // Affichage de l'énigme en cours du joueur
+    Route::get('/game/{game}', [GameController::class, 'showEnigme'])->name('game.show');
+    
+    // Actions sur l'énigme
+    Route::post('/game/{game}/enigme/{enigme}/indice', [GameController::class, 'requestIndice'])->name('game.indice');
+    Route::post('/game/{game}/enigme/{enigme}/solution', [GameController::class, 'revealSolution'])->name('game.solution');
+    Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])->name('game.skip');
+});
+
 
 require __DIR__.'/auth.php';

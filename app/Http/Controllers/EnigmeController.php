@@ -37,56 +37,29 @@ class EnigmeController extends Controller
      * Store a newly created resource in storage.
      */
 public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'place_id' => 'required|exists:places,id',
-            'niveau'   => 'required|in:1,2,3,enfant',
-            'texte'    => 'required|string',
-            'image'    => 'nullable|image|max:2048',
-            'actif'    => 'required|boolean',
-        ]);
+{
+    $validated = $request->validate([
+        'place_id' => 'required|exists:places,id',
+        'niveau'   => 'required|in:1,2,3,enfant',
+        'texte'    => 'required|string',
+        'solution' => 'required|string|max:255',
+        'indice_1' => 'required|string|max:255',
+        'indice_2' => 'nullable|string|max:255',
+        'image'    => 'nullable|image|max:2048',
+        'actif'    => 'required|boolean',
+    ]);
 
-        // Gestion du téléversement de fichier
-        if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('photos', 'public');
-            $validated['image'] = $path;
-        }
-
-        Enigme::create($validated);
-
-        // return redirect()->route('enigmes.index');
-        return to_route('enigmes.index');
+    // Gestion du téléversement de fichier (Adaptée pour Vue 3)
+    if ($request->hasFile('image')) {
+        // Si Vue transmet un tableau de fichiers, on extrait le premier
+        $file = is_array($request->file('image')) ? $request->file('image')[0] : $request->file('image');
+        
+        $path = $file->store('photos', 'public');
+        $validated['image'] = $path;
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Enigme $enigme)
-    {
-        //
-    }
+    Enigme::create($validated);
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Enigme $enigme)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Enigme $enigme)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Enigme $enigme)
-    {
-        //
-    }
+    return to_route('enigmes.index')->with('success', 'Énigme créée avec succès !');
+}
 }

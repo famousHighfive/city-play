@@ -10,6 +10,9 @@ class Enigme extends Model
         'place_id',
         'niveau',
         'texte',
+        'solution',
+        'indice_1',
+        'indice_2',
         'image',
         'actif',
     ];
