@@ -83,6 +83,7 @@ class InvitationController extends Controller
             'name'         => 'required|string|max:255',
             'pseudo'       => 'required|string|max:255|unique:users,pseudo',
             'destinataire' => 'required|string',
+            'password'     => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
         ]);
 
         // Stocke les infos en session pour les récupérer après l'OTP
@@ -90,6 +91,7 @@ class InvitationController extends Controller
             'invite_name'         => $data['name'],
             'invite_pseudo'       => $data['pseudo'],
             'invite_destinataire' => $data['destinataire'],
+            'invite_password'     => $data['password'],
             'invite_canal'        => $invitation->canal,
             'invite_token'        => $token,
         ]);

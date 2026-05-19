@@ -8,6 +8,7 @@ use App\Services\NotificationService;
 use App\Services\OtpService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
@@ -51,7 +52,7 @@ class OtpController extends Controller
             'telephone' => !filter_var(session('invite_destinataire'), FILTER_VALIDATE_EMAIL)
                             ? session('invite_destinataire')
                             : null,
-            'password' => Str::random(32), // password aléatoire, le joueur pourra le changer plus tard
+            'password' => Hash::make(session('invite_password')),
             'role'     => 'player',
         ]);
 
@@ -60,6 +61,16 @@ class OtpController extends Controller
 
         // Connecte le joueur automatiquement
         Auth::login($player);
+
+        // Nettoie la session
+        session()->forget([
+            'invite_name',
+            'invite_pseudo',
+            'invite_destinataire',
+            'invite_password',
+            'invite_canal',
+            'invite_token',
+        ]);
 
         // Redirige vers le dashboard du jeu
         return redirect()->route('dashboard');

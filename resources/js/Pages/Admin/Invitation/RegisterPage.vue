@@ -9,9 +9,11 @@ const props = defineProps({
 })
 
 const form = useForm({
-    name:         '',
-    pseudo:       '',
-    destinataire: '',
+    name:                  '',
+    pseudo:                '',
+    destinataire:          '',
+    password:              '',
+    password_confirmation: '',
 })
 
 // Le placeholder change selon le canal
@@ -98,6 +100,37 @@ const submit = () => {
                     <p v-if="form.errors.destinataire" class="text-red-500 text-xs mt-1">
                         {{ form.errors.destinataire }}
                     </p>
+                </div>
+
+                <!-- Mot de passe -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Ton mot de passe
+                    </label>
+                    <input
+                        v-model="form.password"
+                        type="password"
+                        placeholder="••••••••"
+                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p v-if="form.errors.password" class="text-red-500 text-xs mt-1">
+                        {{ form.errors.password }}
+                    </p>
+                </div>
+
+                <!-- Confirmation mot de passe -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Confirme ton mot de passe
+                    </label>
+                    <input
+                        v-model="form.password_confirmation"
+                        type="password"
+                        placeholder="••••••••"
+                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
                 </div>
 
                 <!-- Canal affiché en lecture seule -->
