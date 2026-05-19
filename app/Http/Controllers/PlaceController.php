@@ -58,7 +58,11 @@ public function index()
      */
     public function show(Place $place)
     {
-        //
+        $place->load('environment', 'enigmes');
+
+        return Inertia::render('Admin/Places/Show', [
+            'place' => $place
+        ]);
     }
 
     /**
@@ -66,7 +70,12 @@ public function index()
      */
     public function edit(Place $place)
     {
-        //
+        $environments = Environment::select('id', 'nom')->get();
+
+        return Inertia::render('Admin/Places/Edit', [
+            'place' => $place,
+            'environments' => $environments
+        ]);
     }
 
     /**
@@ -74,7 +83,18 @@ public function index()
      */
     public function update(Request $request, Place $place)
     {
-        //
+        $validated = $request->validate([
+            'environment_id' => 'required|exists:environments,id',
+            'nom' => 'required|string|max:255',
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+            'description' => 'nullable|string|max:500',
+            'rayon_validation' => 'required|integer|min:1',
+        ]);
+
+        $place->update($validated);
+
+        return to_route('places.index')->with('success', 'Lieu mis à jour avec succès !');
     }
 
     /**
@@ -82,6 +102,8 @@ public function index()
      */
     public function destroy(Place $place)
     {
-        //
+        $place->delete();
+
+        return to_route('places.index')->with('success', 'Lieu supprimé avec succès !');
     }
 }

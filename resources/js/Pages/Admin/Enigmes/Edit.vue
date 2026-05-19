@@ -1,58 +1,58 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, Link } from '@inertiajs/vue3';
 
-// Récupération des lieux (places) passés depuis le contrôleur Laravel
-defineProps({
+const props = defineProps({
+    enigme: {
+        type: Object,
+        required: true
+    },
     places: {
         type: Array,
         required: true
     }
 });
 
-// Initialisation du formulaire avec Inertia useForm
 const form = useForm({
-    place_id: '',
-    niveau: '1',
-    texte: '',
-    solution: '',
-    indice_1: '',
-    indice_2: '',
-    image: null, // Changé à null pour gérer le téléversement de fichier
-    actif: true,
+    place_id: props.enigme.place_id,
+    niveau: props.enigme.niveau,
+    texte: props.enigme.texte,
+    solution: props.enigme.solution,
+    indice_1: props.enigme.indice_1,
+    indice_2: props.enigme.indice_2,
+    image: null,
+    actif: props.enigme.actif,
 });
 
-// Fonction de soumission du formulaire
 const submit = () => {
-    // Utilisation de form.post pour soumettre les données (gère aussi les fichiers si vous ajoutez un input file)
-    form.post(route('enigmes.store'), {
-        onSuccess: () => form.reset(),
-    });
+    form.put(route('enigmes.update', props.enigme.id));
 };
 </script>
 
 <template>
-    <Head title="Créer une Énigme" />
+    <Head title="Modifier une Énigme" />
 
     <AppLayout>
         <template #default>
-            <!-- En-tête de la page -->
             <header class="bg-white shadow">
-                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex items-center space-x-4">
+                    <Link :href="route('enigmes.index')" class="text-gray-600 hover:text-gray-800">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </Link>
                     <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                        Créer une Nouvelle Énigme
+                        Modifier l'Énigme
                     </h2>
                 </div>
             </header>
 
-            <!-- Zone du Formulaire -->
             <div class="py-12">
                 <div class="mx-auto max-w-3xl sm:px-6 lg:px-8">
                     <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg p-6">
                         
                         <form @submit.prevent="submit" class="space-y-6" enctype="multipart/form-data">
                             
-                            <!-- Sélection du Lieu (Place) -->
                             <div>
                                 <label for="place_id" class="block text-sm font-medium text-gray-700">Lieu historique ou populaire associé</label>
                                 <select 
@@ -72,7 +72,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Sélection du Niveau -->
                             <div>
                                 <label for="niveau" class="block text-sm font-medium text-gray-700">Niveau de difficulté</label>
                                 <select 
@@ -91,7 +90,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Texte de l'énigme -->
                             <div>
                                 <label for="texte" class="block text-sm font-medium text-gray-700">Texte de l'énigme / Question</label>
                                 <textarea 
@@ -108,7 +106,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Indice 1 -->
                             <div>
                                 <label for="indice_1" class="block text-sm font-medium text-gray-700">Premier Indice</label>
                                 <input 
@@ -125,7 +122,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Indice 2 -->
                             <div>
                                 <label for="indice_2" class="block text-sm font-medium text-gray-700">Deuxième Indice (Optionnel)</label>
                                 <input 
@@ -141,7 +137,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Solution -->
                             <div>
                                 <label for="solution" class="block text-sm font-medium text-gray-700">Solution de l'énigme</label>
                                 <input 
@@ -158,9 +153,11 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Image (Fichier) -->
                             <div>
                                 <label for="image" class="block text-sm font-medium text-gray-700">Illustration de l'énigme</label>
+                                <div v-if="enigme.image" class="mb-3">
+                                    <img :src="`/storage/${enigme.image}`" alt="Current" class="w-32 h-32 object-cover rounded-md">
+                                </div>
                                 <input 
                                     id="image" 
                                     type="file"
@@ -174,7 +171,6 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Champ Actif (Checkbox) -->
                             <div class="flex items-start">
                                 <div class="flex h-5 items-center">
                                     <input 
@@ -190,23 +186,20 @@ const submit = () => {
                                 </div>
                             </div>
 
-                            <!-- Boutons d'action -->
                             <div class="flex items-center justify-end space-x-4 border-t border-gray-100 pt-4">
-                                <button 
-                                    type="button" 
-                                    @click="form.reset()" 
+                                <Link 
+                                    :href="route('enigmes.index')" 
                                     class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none"
-                                    :disabled="form.processing"
                                 >
-                                    Réinitialiser
-                                </button>
+                                    Annuler
+                                </Link>
                                 
                                 <button 
                                     type="submit" 
                                     class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none disabled:opacity-50"
                                     :disabled="form.processing"
                                 >
-                                    {{ form.processing ? 'Enregistrement...' : 'Enregistrer l\'énigme' }}
+                                    {{ form.processing ? 'Enregistrement...' : 'Mettre à jour' }}
                                 </button>
                             </div>
 

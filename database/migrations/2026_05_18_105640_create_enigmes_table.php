@@ -15,12 +15,16 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('place_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->enum('niveau', ['1', '2', '3', 'enfant']);
 
-            $table->text('texte');
+            $table->text('texte'); // La question/énigme à afficher
+
+            $table->text('solution'); // La réponse textuelle ou explication de la solution
+            $table->text('indice_1')->nullable(); // Le premier indice à afficher
+            $table->text('indice_2')->nullable(); // Un deuxième indice si besoin
 
             $table->string('image', 2048)->nullable();
 

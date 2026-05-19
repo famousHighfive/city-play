@@ -1,14 +1,21 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-// Récupération des données envoyées par le contrôleur (incluant la relation environment)
 defineProps({
     places: {
         type: Array,
         required: true
     }
 });
+
+const form = useForm();
+
+const deletePlace = (place) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce lieu ?')) {
+        form.delete(route('places.destroy', place.id));
+    }
+};
 </script>
 
 <template>
@@ -87,9 +94,15 @@ defineProps({
                                         
                                         <!-- Actions -->
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                            <Link :href="route('places.show', place.id)" class="text-gray-600 hover:text-gray-900">
+                                                Voir
+                                            </Link>
                                             <Link :href="route('places.edit', place.id)" class="text-indigo-600 hover:text-indigo-900">
                                                 Modifier
                                             </Link>
+                                            <button @click="deletePlace(place)" class="text-red-600 hover:text-red-900">
+                                                Supprimer
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>

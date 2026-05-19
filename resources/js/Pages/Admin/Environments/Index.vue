@@ -1,14 +1,21 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-// Récupération des données transmises par le contrôleur EnvironmentController
 defineProps({
     environments: {
         type: Array,
         required: true
     }
 });
+
+const form = useForm();
+
+const deleteEnvironment = (environment) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cet environnement ?')) {
+        form.delete(route('environments.destroy', environment.id));
+    }
+};
 </script>
 
 <template>
@@ -93,9 +100,15 @@ defineProps({
                                             <Link :href="route('invitations.index', env.id)" class="text-green-600 hover:text-green-900">
                                                 Invitations
                                             </Link>
+                                            <Link :href="route('environments.show', env.id)" class="text-gray-600 hover:text-gray-900">
+                                                Voir
+                                            </Link>
                                             <Link :href="route('environments.edit', env.id)" class="text-indigo-600 hover:text-indigo-900">
                                                 Modifier
                                             </Link>
+                                            <button @click="deleteEnvironment(env)" class="text-red-600 hover:text-red-900">
+                                                Supprimer
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>

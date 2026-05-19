@@ -49,7 +49,11 @@ public function store(Request $request)
      */
     public function show(Environment $environment)
     {
-        //
+        $environment->load('places');
+
+        return Inertia::render('Admin/Environments/Show', [
+            'environment' => $environment
+        ]);
     }
 
     /**
@@ -57,7 +61,9 @@ public function store(Request $request)
      */
     public function edit(Environment $environment)
     {
-        //
+        return Inertia::render('Admin/Environments/Edit', [
+            'environment' => $environment
+        ]);
     }
 
     /**
@@ -65,7 +71,15 @@ public function store(Request $request)
      */
     public function update(Request $request, Environment $environment)
     {
-        //
+        $validated = $request->validate([
+            'nom' => 'required|string|max:150',
+            'description' => 'nullable|string',
+            'actif' => 'required|boolean',
+        ]);
+
+        $environment->update($validated);
+
+        return to_route('environments.index')->with('success', 'Environnement mis à jour avec succès !');
     }
 
     /**
@@ -73,6 +87,8 @@ public function store(Request $request)
      */
     public function destroy(Environment $environment)
     {
-        //
+        $environment->delete();
+
+        return to_route('environments.index')->with('success', 'Environnement supprimé avec succès !');
     }
 }

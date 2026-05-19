@@ -1,8 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-// Récupération du tableau d'énigmes transmis par Laravel
 defineProps({
     enigmes: {
         type: Array,
@@ -10,7 +9,14 @@ defineProps({
     }
 });
 
-// Helper pour formater l'affichage visuel des badges de niveau
+const form = useForm();
+
+const deleteEnigme = (enigme) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cette énigme ?')) {
+        form.delete(route('enigmes.destroy', enigme.id));
+    }
+};
+
 const getNiveauClass = (niveau) => {
     switch (niveau) {
         case '1': return 'bg-green-50 text-green-700 ring-green-600/20';
@@ -119,10 +125,15 @@ const getNiveauClass = (niveau) => {
 
                                         <!-- Actions -->
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                                            <!-- CORRECTION : 'enigmes.edit' au lieu de 'admin.enigmes.edit' -->
+                                            <Link :href="route('enigmes.show', enigme.id)" class="text-gray-600 hover:text-gray-900">
+                                                Voir
+                                            </Link>
                                             <Link :href="route('enigmes.edit', enigme.id)" class="text-indigo-600 hover:text-indigo-900">
                                                 Modifier
                                             </Link>
+                                            <button @click="deleteEnigme(enigme)" class="text-red-600 hover:text-red-900">
+                                                Supprimer
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>
