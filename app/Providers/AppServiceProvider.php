@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Schema; // 1. AJOUTEZ CETTE LIGNE
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,6 +20,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Vite::prefetch(concurrency: 3);
+        Schema::defaultStringLength(191); // 2. AJOUTEZ CETTE LIGNE
     }
 }

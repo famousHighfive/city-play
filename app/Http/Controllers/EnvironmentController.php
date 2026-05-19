@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Environment;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class EnvironmentController extends Controller
 {
@@ -12,7 +13,10 @@ class EnvironmentController extends Controller
      */
     public function index()
     {
-        //
+        $environments = Environment::all();
+        return Inertia::render('Admin/Environments/Index', [
+            'environments' => $environments
+        ]);
     }
 
     /**
@@ -20,23 +24,36 @@ class EnvironmentController extends Controller
      */
     public function create()
     {
-        //
+        return Inertia::render('Admin/Environments/Create');
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
-    {
-        //
-    }
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'nom' => 'required|string|max:150',
+        'description' => 'nullable|string',
+        'actif' => 'required|boolean',
+    ]);
+
+    Environment::create($validated);
+
+    return redirect()->route('environments.index');
+}
+
 
     /**
      * Display the specified resource.
      */
     public function show(Environment $environment)
     {
-        //
+        $environment->load('places');
+
+        return Inertia::render('Admin/Environments/Show', [
+            'environment' => $environment
+        ]);
     }
 
     /**
@@ -44,7 +61,9 @@ class EnvironmentController extends Controller
      */
     public function edit(Environment $environment)
     {
-        //
+        return Inertia::render('Admin/Environments/Edit', [
+            'environment' => $environment
+        ]);
     }
 
     /**
@@ -52,7 +71,15 @@ class EnvironmentController extends Controller
      */
     public function update(Request $request, Environment $environment)
     {
-        //
+        $validated = $request->validate([
+            'nom' => 'required|string|max:150',
+            'description' => 'nullable|string',
+            'actif' => 'required|boolean',
+        ]);
+
+        $environment->update($validated);
+
+        return to_route('environments.index')->with('success', 'Environnement mis à jour avec succès !');
     }
 
     /**
@@ -60,6 +87,8 @@ class EnvironmentController extends Controller
      */
     public function destroy(Environment $environment)
     {
-        //
+        $environment->delete();
+
+        return to_route('environments.index')->with('success', 'Environnement supprimé avec succès !');
     }
 }
