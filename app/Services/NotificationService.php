@@ -14,18 +14,18 @@ class NotificationService
     {
         match ($invitation->canal) {
             'email'    => Mail::to($invitation->destinataire)
-                              ->send(new GameInvitationMail(
-                                  $lien,
-                                  $invitation->environment->nom
-                              )),
+                ->send(new GameInvitationMail(
+                    $lien,
+                    $invitation->environment->nom
+                )),
             'sms'      => $this->envoyerSms(
-                              $invitation->destinataire,
-                              "Rejoins la partie ! Lien valable 5h : {$lien}"
-                          ),
+                $invitation->destinataire,
+                "Rejoins la partie ! Lien valable 5h : {$lien}"
+            ),
             'whatsapp' => $this->envoyerWhatsapp(
-                              $invitation->destinataire,
-                              "Rejoins la partie ! Lien valable 5h : {$lien}"
-                          ),
+                $invitation->destinataire,
+                "Rejoins la partie ! Lien valable 5h : {$lien}"
+            ),
         };
     }
 
