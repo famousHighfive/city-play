@@ -38,7 +38,7 @@ class AuthenticatedSessionController extends Controller
         $user = Auth::user();
 
         // if admin, redirect to admin dashboard
-        if($user->email === 'admin@gmail.com') {
+        if($user->role === 'admin') {
             return redirect()->intended(route('dashboard.admin', absolute: false));
         }
 

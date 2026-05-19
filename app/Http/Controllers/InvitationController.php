@@ -3,63 +3,105 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitation;
+use App\Models\Environment;
+use App\Services\InvitationService;
+use App\Services\NotificationService;
+use App\Services\OtpService;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class InvitationController extends Controller
 {
+    public function __construct(
+        private InvitationService  $invitationService,
+        private NotificationService $notificationService,
+        private OtpService         $otpService,
+    ) {}
+
+    public function index(Environment $environment): Response
+{
+    return Inertia::render('Admin/Invitation/Index', [
+        'environment' => $environment,
+        'invitations' => $environment->invitations()
+                                     ->with('player')
+                                     ->latest()
+                                     ->get(),
+    ]);
+}
+
     /**
-     * Display a listing of the resource.
+     * L'admin envoie une invitation.
      */
-    public function index()
+    public function store(Request $request, Environment $environment)
     {
-        //
+        $data = $request->validate([
+            'destinataire' => 'required|string',
+            'canal'        => 'required|in:email,sms,whatsapp',
+        ]);
+
+        // 1. Créer l'invitation en base
+        $invitation = $this->invitationService->creer(
+            $environment,
+            $data['destinataire'],
+            $data['canal']
+        );
+
+        // 2. Construire le lien
+        $lien = route('invitation.show', ['token' => $invitation->token]);
+
+        // 3. Envoyer le lien au destinataire
+        $this->notificationService->envoyerInvitation($invitation, $lien);
+
+        return back()->with('success', 'Invitation envoyée avec succès !');
     }
 
     /**
-     * Show the form for creating a new resource.
+     * L'invité clique sur le lien — on affiche le formulaire d'inscription.
      */
-    public function create()
+    public function show(string $token): Response
     {
-        //
+        // Valide le token (expire, déjà utilisé, inexistant)
+        $invitation = $this->invitationService->validerToken($token);
+
+        return Inertia::render('Admin/Invitation/RegisterPage', [
+            'token'        => $token,
+            'canal'        => $invitation->canal,
+            'environment'  => $invitation->environment,
+        ]);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * L'invité soumet le formulaire d'inscription.
      */
-    public function store(Request $request)
+    public function register(Request $request, string $token)
     {
-        //
-    }
+        // Revalide le token à chaque étape
+        $invitation = $this->invitationService->validerToken($token);
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Invitation $invitation)
-    {
-        //
-    }
+        $data = $request->validate([
+            'name'         => 'required|string|max:255',
+            'pseudo'       => 'required|string|max:255|unique:users,pseudo',
+            'destinataire' => 'required|string',
+        ]);
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Invitation $invitation)
-    {
-        //
-    }
+        // Stocke les infos en session pour les récupérer après l'OTP
+        session([
+            'invite_name'         => $data['name'],
+            'invite_pseudo'       => $data['pseudo'],
+            'invite_destinataire' => $data['destinataire'],
+            'invite_canal'        => $invitation->canal,
+            'invite_token'        => $token,
+        ]);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Invitation $invitation)
-    {
-        //
-    }
+        // Génère et envoie le code OTP
+        $otp = $this->otpService->generer($data['destinataire'], $invitation->canal);
+        $this->notificationService->envoyerOtp($otp);
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Invitation $invitation)
-    {
-        //
+        return Inertia::render('Admin/Invitation/OtpPage', [
+            'token'        => $token,
+            'destinataire' => $data['destinataire'],
+            'canal'        => $invitation->canal,
+        ]);
     }
 }

@@ -90,6 +90,9 @@ defineProps({
                                         
                                         <!-- Boutons d'édition future -->
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                            <Link :href="route('invitations.index', env.id)" class="text-green-600 hover:text-green-900">
+                                                Invitations
+                                            </Link>
                                             <Link :href="route('environments.edit', env.id)" class="text-indigo-600 hover:text-indigo-900">
                                                 Modifier
                                             </Link>

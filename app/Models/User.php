@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Http\Resources\JsonApi\RelationResolver;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
@@ -17,32 +18,49 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-    ];
-
+    
     /**
      * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
+    *
+    * @var list<string>
+    */
+    
+    /**
+     * Get the attributes that should be cast.
+    *
+    * @return array<string, string>
+    */
+    protected $fillable = [
+        'name',
+        'pseudo',
+        'email',
+        'password',
+        'telephone',
+        'role',
+        'account_status',
+        'profile_photo',
+        'access_expires_at',
+    ];
+
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
+            'access_expires_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function invitations(){
+        return $this->hasMany(Invitation::class, 'player_id');
+    }
+
+    public function isAdmin():bool{
+        return $this->role==='admin';
     }
 }
