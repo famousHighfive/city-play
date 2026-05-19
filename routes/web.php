@@ -24,7 +24,16 @@ Route::get('/dashboard-admin', function () {
 })->middleware(['auth', 'verified'])->name('dashboard.admin');
 
 Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
+    $environments = \App\Models\Environment::where('actif', true)->get();
+    $games = \App\Models\Game::where('user_id', auth()->id())
+        ->with('environment')
+        ->orderBy('created_at', 'desc')
+        ->get();
+
+    return Inertia::render('Dashboard', [
+        'environments' => $environments,
+        'games' => $games
+    ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
@@ -36,10 +45,10 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::resource('environments', EnvironmentController::class);
 
-    // Route pour initialiser et commencer une nouvelle partie
-Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
-    ->name('game.start');
-
+    Route::get('/environments/{environment}/configure', [GameController::class, 'configure'])
+        ->name('game.configure');
+    Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
+        ->name('game.start');
 });
 Route::middleware('auth')->group(function () {
     Route::resource('places', PlaceController::class);
