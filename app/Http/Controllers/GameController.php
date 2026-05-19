@@ -11,6 +11,11 @@ use App\Models\Environment;
 
 class GameController extends Controller
 {
+    public function show(Game $game)
+    {
+        return $this->showEnigme($game);
+    }
+
     public function configure(Environment $environment)
     {
         return Inertia::render('Game/ConfigureGame', [
