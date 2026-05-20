@@ -56,11 +56,46 @@ class User extends Authenticatable
         ];
     }
 
-    public function invitations(){
+    public function invitations()
+    {
         return $this->hasMany(Invitation::class, 'player_id');
     }
 
-    public function isAdmin():bool{
-        return $this->role==='admin';
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isPlayer(): bool
+    {
+        return $this->role === 'player';
+    }
+
+    /**
+     * Environnements auxquels le joueur a accès via une invitation acceptée.
+     */
+    public function environmentsAccessibles()
+    {
+        return Environment::query()
+            ->where('actif', true)
+            ->whereIn(
+                'id',
+                $this->invitations()
+                    ->where('statut', 'used')
+                    ->pluck('environment_id')
+            )
+            ->get();
+    }
+
+    public function hasAccessToEnvironment(int|Environment $environment): bool
+    {
+        $environmentId = $environment instanceof Environment
+            ? $environment->id
+            : $environment;
+
+        return $this->invitations()
+            ->where('statut', 'used')
+            ->where('environment_id', $environmentId)
+            ->exists();
     }
 }

@@ -56,14 +56,14 @@ return new class extends Migration {
 
             1. ordre ->Permet à la mairie de dire :
 
-1 → lieu important
-2 → ensuite celui-ci
-3 → etc
+            1 → lieu important
+            2 → ensuite celui-ci
+            3 → etc
 
-popularite -> Permet au moteur de privilégier :
+            popularite -> Permet au moteur de privilégier :
 
-les meilleurs lieux
-les lieux iconiques
+            les meilleurs lieux
+            les lieux iconiques
 
             |--------------------------------------------------------------------------
             */

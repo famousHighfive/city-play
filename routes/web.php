@@ -25,18 +25,12 @@ use App\Http\Controllers\EnvironmentController;
 */
 
 Route::get('/', function () {
-
     return Inertia::render('Welcome', [
-
         'canLogin' => Route::has('login'),
-
         'canRegister' => Route::has('register'),
-
         'laravelVersion' => Application::VERSION,
-
         'phpVersion' => PHP_VERSION,
     ]);
-
 });
 
 /*
@@ -46,24 +40,29 @@ Route::get('/', function () {
 */
 
 Route::middleware(['auth', 'verified'])->group(function () {
-
     Route::get('/dashboard', function () {
+        $user = auth()->user();
 
-        $environments = \App\Models\Environment::where('actif', true)
-            ->get();
+        // Joueur : uniquement les villes liées à ses invitations acceptées
+        $environments = $user->isAdmin()
+            ? \App\Models\Environment::where('actif', true)->get()
+            : $user->environmentsAccessibles();
 
-        $games = \App\Models\Game::where('user_id', auth()->id())
+        $games = \App\Models\Game::where('user_id', $user->id)
+            ->when(! $user->isAdmin(), function ($query) use ($user) {
+                $query->whereIn(
+                    'environment_id',
+                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
+                );
+            })
             ->with('environment')
             ->latest()
             ->get();
 
         return Inertia::render('Dashboard', [
-
             'environments' => $environments,
-
-            'games' => $games
+            'games' => $games,
         ]);
-
     })->name('dashboard');
 });
 
@@ -76,71 +75,28 @@ Route::middleware(['auth', 'verified'])->group(function () {
 */
 
 Route::middleware(['auth', 'verified', 'admin'])->group(function () {
-
-    /*
-    |--------------------------------------------------------------------------
-    | Dashboard Admin
-    |--------------------------------------------------------------------------
-    */
-
     Route::get('/dashboard-admin', function () {
-
-    return Inertia::render('DashboardAdmin', [
-    'usersCount' => \App\Models\User::count(),
-    'gamesCount' => \App\Models\Game::count(),
-    'environmentsCount' => \App\Models\Environment::count(),
-    'enigmesCount' => \App\Models\Enigme::count(),
-
-    'recentGames' => \App\Models\Game::latest()
-        ->with('environment')
-        ->limit(5)
-        ->get(),
-]);    
+        return Inertia::render('DashboardAdmin', [
+            'usersCount' => \App\Models\User::count(),
+            'gamesCount' => \App\Models\Game::count(),
+            'environmentsCount' => \App\Models\Environment::count(),
+            'enigmesCount' => \App\Models\Enigme::count(),
+            'recentGames' => \App\Models\Game::latest()
+                ->with('environment')
+                ->limit(5)
+                ->get(),
+        ]);
     })->name('dashboard.admin');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Environments
-    |--------------------------------------------------------------------------
-    */
-
     Route::resource('environments', EnvironmentController::class);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Places
-    |--------------------------------------------------------------------------
-    */
-
     Route::resource('places', PlaceController::class);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Enigmes
-    |--------------------------------------------------------------------------
-    */
-
     Route::resource('enigmes', EnigmeController::class);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Invitations
-    |--------------------------------------------------------------------------
-    */
+    Route::get('/environments/{environment}/invitations', [InvitationController::class, 'index'])
+        ->name('invitations.index');
 
-    Route::get('/environments/{environment}/invitations', [
-
-        InvitationController::class,
-        'index'
-
-    ])->name('invitations.index');
-
-    Route::post('/environments/{environment}/inviter', [
-
-        InvitationController::class,
-        'store'
-
-    ])->name('invitations.store');
+    Route::post('/environments/{environment}/inviter', [InvitationController::class, 'store'])
+        ->name('invitations.store');
 });
 
 /*
@@ -150,84 +106,23 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
 */
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/environments/{environment}/configure', [GameController::class, 'configure'])
+        ->name('game.configure');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Configuration partie
-    |--------------------------------------------------------------------------
-    */
+    Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
+        ->name('game.start');
 
-    Route::get('/environments/{environment}/configure', [
+    Route::get('/game/{game}', [GameController::class, 'showEnigme'])
+        ->name('game.show');
 
-        GameController::class,
-        'configure'
+    Route::post('/game/{game}/enigme/{enigme}/indice', [GameController::class, 'requestIndice'])
+        ->name('game.indice');
 
-    ])->name('game.configure');
+    Route::post('/game/{game}/enigme/{enigme}/solution', [GameController::class, 'revealSolution'])
+        ->name('game.solution');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Démarrer une partie
-    |--------------------------------------------------------------------------
-    */
-
-    Route::post('/environments/{environment}/start-game', [
-
-        GameController::class,
-        'startNewGame'
-
-    ])->name('game.start');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Afficher énigme en cours
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/game/{game}', [
-
-        GameController::class,
-        'showEnigme'
-
-    ])->name('game.show');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Demander indice
-    |--------------------------------------------------------------------------
-    */
-
-    Route::post('/game/{game}/enigme/{enigme}/indice', [
-
-        GameController::class,
-        'requestIndice'
-
-    ])->name('game.indice');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Voir solution
-    |--------------------------------------------------------------------------
-    */
-
-    Route::post('/game/{game}/enigme/{enigme}/solution', [
-
-        GameController::class,
-        'revealSolution'
-
-    ])->name('game.solution');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Passer énigme
-    |--------------------------------------------------------------------------
-    */
-
-    Route::post('/game/{game}/enigme/{enigme}/skip', [
-
-        GameController::class,
-        'skipEnigme'
-
-    ])->name('game.skip');
+    Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])
+        ->name('game.skip');
 });
 
 /*
@@ -237,27 +132,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 */
 
 Route::middleware('auth')->group(function () {
-
-    Route::get('/profile', [
-
-        ProfileController::class,
-        'edit'
-
-    ])->name('profile.edit');
-
-    Route::patch('/profile', [
-
-        ProfileController::class,
-        'update'
-
-    ])->name('profile.update');
-
-    Route::delete('/profile', [
-
-        ProfileController::class,
-        'destroy'
-
-    ])->name('profile.destroy');
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
 /*
@@ -269,58 +146,24 @@ Route::middleware('auth')->group(function () {
 Route::prefix('invitation')
     ->name('invitation.')
     ->group(function () {
+        // Routes spécifiques en premier (avant GET /{token})
+        Route::get('/{token}/register', [InvitationController::class, 'registerUrlFallback'])
+            ->name('register.fallback');
 
-        /*
-        |--------------------------------------------------------------------------
-        | Ouvrir invitation
-        |--------------------------------------------------------------------------
-        */
+        Route::get('/{token}/otp', [InvitationController::class, 'showOtp'])
+            ->name('otp.show');
 
-        Route::get('/{token}', [
+        Route::post('/{token}/register', [InvitationController::class, 'register'])
+            ->name('register');
 
-            InvitationController::class,
-            'show'
+        Route::post('/{token}/otp/verifier', [OtpController::class, 'verifier'])
+            ->name('otp.verifier');
 
-        ])->name('show');
+        Route::post('/{token}/otp/renvoyer', [OtpController::class, 'renvoyer'])
+            ->name('otp.renvoyer');
 
-        /*
-        |--------------------------------------------------------------------------
-        | Inscription invité
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post('/{token}/register', [
-
-            InvitationController::class,
-            'register'
-
-        ])->name('register');
-
-        /*
-        |--------------------------------------------------------------------------
-        | Vérification OTP
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post('/{token}/otp/verifier', [
-
-            OtpController::class,
-            'verifier'
-
-        ])->name('otp.verifier');
-
-        /*
-        |--------------------------------------------------------------------------
-        | Renvoyer OTP
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post('/{token}/otp/renvoyer', [
-
-            OtpController::class,
-            'renvoyer'
-
-        ])->name('otp.renvoyer');
+        Route::get('/{token}', [InvitationController::class, 'show'])
+            ->name('show');
     });
 
 /*
@@ -329,4 +172,4 @@ Route::prefix('invitation')
 |--------------------------------------------------------------------------
 */
 
-require __DIR__ . '/auth.php';
+require __DIR__.'/auth.php';

@@ -55,8 +55,11 @@ const resumeGame = (game) => {
                             </div>
                             <div class="text-sm text-gray-500 space-y-1 mb-4">
                                 <p>Début : {{ new Date(game.date_debut).toLocaleDateString('fr-FR') }}</p>
+                                <p v-if="game.mode_jeu">Mode : {{ game.mode_jeu }}</p>
                                 <p>Membres : {{ game.nb_membres }}</p>
-                                <p>Moyen de locomotion : {{ game.moyen_locomotion }}</p>
+                                <p>Durée : {{ game.duree_restante ?? game.duree_prevue }} min</p>
+                                <p>Difficulté : {{ game.niveau_difficulte }}</p>
+                                <p>Locomotion : {{ game.moyen_locomotion }}</p>
                             </div>
                             <button 
                                 @click="resumeGame(game)"
@@ -68,11 +71,13 @@ const resumeGame = (game) => {
                     </div>
                 </div>
 
-                <!-- Environnements disponibles -->
+                <!-- Environnements accessibles (invitation acceptée) -->
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Villes disponibles</h3>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        {{ environments.length === 1 ? 'Votre ville' : 'Vos villes' }}
+                    </h3>
                     <div v-if="environments.length === 0" class="text-center py-12 bg-white shadow-sm sm:rounded-lg">
-                        <p class="text-gray-500">Aucune ville disponible pour le moment.</p>
+                        <p class="text-gray-500">Aucune invitation acceptée pour le moment.</p>
                     </div>
                     <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div v-for="env in environments" :key="env.id" class="bg-white shadow-sm sm:rounded-lg p-6">

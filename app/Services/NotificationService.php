@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\GameInvitationMail;
 use App\Models\Invitation;
 use App\Models\OtpCode;
+use App\Mail\OtpMail;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
@@ -41,11 +42,19 @@ class NotificationService
     }
 
     private function envoyerEmail(string $destinataire, string $sujet, string $message): void
-    {
-        // Pour l'OTP on garde le log pour l'instant
-        // on créera un OtpMail ensuite
-        Log::info("EMAIL à {$destinataire} — {$sujet} : {$message}");
-    }
+{
+    // On extrait le code du message "Ton code de vérification est : 123456. Valable 10 minutes."
+    preg_match('/:\s*(\d{6})\./', $message, $matches);
+    $code = $matches[1] ?? $message;
+
+    Mail::to($destinataire)->send(new OtpMail($code));
+}
+// private function envoyerEmail(string $destinataire, string $sujet, string $message): void
+//     {
+//         // Pour l'OTP on garde le log pour l'instant
+//         // on créera un OtpMail ensuite
+//         Log::info("EMAIL à {$destinataire} — {$sujet} : {$message}");
+//     }
 
     private function envoyerSms(string $destinataire, string $message): void
     {

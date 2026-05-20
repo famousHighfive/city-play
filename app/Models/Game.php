@@ -12,7 +12,10 @@ class Game extends Model
         'date_debut',
         'date_fin',
         'statut',
+        'mode_jeu',
         'nb_membres',
+        'participants',
+        'challenger_email',
         'duree_prevue',
         'duree_restante',
         'moyen_locomotion',
@@ -22,6 +25,7 @@ class Game extends Model
     protected $casts = [
         'date_debut' => 'datetime',
         'date_fin' => 'datetime',
+        'participants' => 'array',
     ];
 
     public function user()
