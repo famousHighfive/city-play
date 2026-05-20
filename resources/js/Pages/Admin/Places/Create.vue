@@ -1,190 +1,446 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { onMounted, ref } from 'vue';
+import L from 'leaflet';
 
-// Récupération des environnements transmis par le contrôleur pour alimenter le select
 defineProps({
-    environments: {
-        type: Array,
-        required: true
-    }
+    environments: Array
 });
 
-// Initialisation du formulaire avec Inertia useForm
+const map = ref(null);
+const search = ref('');
+
+let marker = null;
+
 const form = useForm({
     environment_id: '',
     nom: '',
+    description: '',
     latitude: '',
     longitude: '',
-    description: '',
-    rayon_validation: 30, // Valeur par défaut de votre migration
+    rayon_validation: 30,
+    ordre: 0,
+    popularite: 1,
 });
 
-// Fonction de soumission du formulaire
 const submit = () => {
+
     form.post(route('places.store'), {
-        onSuccess: () => form.reset(),
+
+        onSuccess: () => {
+
+            form.reset();
+
+            if (marker) {
+                map.value.removeLayer(marker);
+            }
+
+            map.value.setView([6.370293, 2.391236], 13);
+        }
     });
+};
+
+onMounted(() => {
+
+    map.value = L.map('map').setView([6.370293, 2.391236], 13);
+
+    L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {
+            attribution: '&copy; OpenStreetMap contributors'
+        }
+    ).addTo(map.value);
+
+    map.value.on('click', async (e) => {
+
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        form.latitude = lat;
+        form.longitude = lng;
+
+        updateMarker(lat, lng);
+
+        try {
+
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+            );
+
+            const data = await response.json();
+
+            if (data.display_name && !form.nom) {
+                form.nom = data.display_name;
+            }
+
+        } catch (error) {
+            console.error(error);
+        }
+    });
+});
+
+const updateMarker = (lat, lng) => {
+
+    if (marker) {
+        map.value.removeLayer(marker);
+    }
+
+    marker = L.marker([lat, lng]).addTo(map.value);
+
+    map.value.setView([lat, lng], 16);
+};
+
+const useCurrentLocation = () => {
+
+    if (!navigator.geolocation) {
+
+        alert('Géolocalisation non supportée');
+
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+
+        async (position) => {
+
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+
+            form.latitude = lat;
+            form.longitude = lng;
+
+            updateMarker(lat, lng);
+
+            try {
+
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+                );
+
+                const data = await response.json();
+
+                if (data.display_name && !form.nom) {
+                    form.nom = data.display_name;
+                }
+
+            } catch (error) {
+                console.error(error);
+            }
+        },
+
+        () => {
+            alert('Impossible de récupérer votre position');
+        }
+    );
+};
+
+const searchPlace = async () => {
+
+    if (!search.value) {
+
+        alert('Veuillez saisir un lieu');
+
+        return;
+    }
+
+    try {
+
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(search.value)}`
+        );
+
+        const data = await response.json();
+
+        if (data.length === 0) {
+
+            alert('Lieu introuvable');
+
+            return;
+        }
+
+        const place = data[0];
+
+        const lat = parseFloat(place.lat);
+        const lng = parseFloat(place.lon);
+
+        form.latitude = lat;
+        form.longitude = lng;
+        form.nom = place.display_name;
+
+        updateMarker(lat, lng);
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert('Erreur lors de la recherche');
+    }
 };
 </script>
 
 <template>
+
     <Head title="Créer une Place" />
 
     <AppLayout>
-        <template #default>
-            <!-- En-tête de la page -->
-            <header class="bg-white shadow">
-                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                        Créer une Nouvelle Place
-                    </h2>
+
+        <div class="max-w-6xl mx-auto py-10 px-4">
+
+            <div class="bg-white rounded-2xl shadow overflow-hidden">
+
+                <div class="border-b px-8 py-6">
+
+                    <h1 class="text-3xl font-bold">
+                        Nouvelle Place
+                    </h1>
+
+                    <p class="text-gray-500 mt-2">
+                        Ajouter un nouveau lieu CityPlay
+                    </p>
+
                 </div>
-            </header>
 
-            <!-- Zone du Formulaire -->
-            <div class="py-12">
-                <div class="mx-auto max-w-3xl sm:px-6 lg:px-8">
-                    <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg p-6">
-                        
-                        <form @submit.prevent="submit" class="space-y-6">
-                            
-                            <!-- Sélection de l'Environnement -->
-                            <div>
-                                <label for="environment_id" class="block text-sm font-medium text-gray-700">Environnement associé</label>
-                                <select 
-                                    id="environment_id" 
-                                    v-model="form.environment_id" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                    :class="{ 'border-red-500': form.errors.environment_id }"
-                                    required
-                                >
-                                    <option value="" disabled>Sélectionnez un environnement</option>
-                                    <option v-for="env in environments" :key="env.id" :value="env.id">
-                                        {{ env.nom }}
-                                    </option>
-                                </select>
-                                <div v-if="form.errors.environment_id" class="mt-1 text-sm text-red-600">
-                                    {{ form.errors.environment_id }}
-                                </div>
-                            </div>
+                <form
+                    @submit.prevent="submit"
+                    class="p-8 space-y-8"
+                >
 
-                            <!-- Champ Nom -->
-                            <div>
-                                <label for="nom" class="block text-sm font-medium text-gray-700">Nom de la place</label>
-                                <input 
-                                    id="nom" 
-                                    v-model="form.nom" 
-                                    type="text" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                    :class="{ 'border-red-500': form.errors.nom }"
-                                    placeholder="Ex: Place de la République..."
-                                    required
-                                />
-                                <div v-if="form.errors.nom" class="mt-1 text-sm text-red-600">
-                                    {{ form.errors.nom }}
-                                </div>
-                            </div>
+                    <!-- ENVIRONNEMENT -->
+                    <div>
 
-                            <!-- Coordonnées Géographiques (Latitude & Longitude) -->
-                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                <!-- Latitude -->
-                                <div>
-                                    <label for="latitude" class="block text-sm font-medium text-gray-700">Latitude</label>
-                                    <input 
-                                        id="latitude" 
-                                        v-model="form.latitude" 
-                                        type="number" 
-                                        step="0.0000001"
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                        :class="{ 'border-red-500': form.errors.latitude }"
-                                        placeholder="Ex: 48.856614"
-                                        required
-                                />
-                                    <div v-if="form.errors.latitude" class="mt-1 text-sm text-red-600">
-                                        {{ form.errors.latitude }}
-                                    </div>
-                                </div>
+                        <label class="block mb-2 font-medium">
+                            Environnement
+                        </label>
 
-                                <!-- Longitude -->
-                                <div>
-                                    <label for="longitude" class="block text-sm font-medium text-gray-700">Longitude</label>
-                                    <input 
-                                        id="longitude" 
-                                        v-model="form.longitude" 
-                                        type="number" 
-                                        step="0.0000001"
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                        :class="{ 'border-red-500': form.errors.longitude }"
-                                        placeholder="Ex: 2.352221"
-                                        required
-                                    />
-                                    <div v-if="form.errors.longitude" class="mt-1 text-sm text-red-600">
-                                        {{ form.errors.longitude }}
-                                    </div>
-                                </div>
-                            </div>
+                        <select
+                            v-model="form.environment_id"
+                            class="w-full border rounded-xl px-4 py-3"
+                        >
+                            <option value="">
+                                Sélectionner
+                            </option>
 
-                            <!-- Champ Description -->
-                            <div>
-                                <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
-                                <textarea 
-                                    id="description" 
-                                    v-model="form.description" 
-                                    rows="3"
-                                    maxlength="500"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                    :class="{ 'border-red-500': form.errors.description }"
-                                    placeholder="Une brève description (500 caractères max, optionnel)..."
-                                ></textarea>
-                                <div v-if="form.errors.description" class="mt-1 text-sm text-red-600">
-                                    {{ form.errors.description }}
-                                </div>
-                            </div>
+                            <option
+                                v-for="env in environments"
+                                :key="env.id"
+                                :value="env.id"
+                            >
+                                {{ env.nom }}
+                            </option>
 
-                            <!-- Rayon de Validation -->
-                            <div>
-                                <label for="rayon_validation" class="block text-sm font-medium text-gray-700">Rayon de validation (en mètres)</label>
-                                <input 
-                                    id="rayon_validation" 
-                                    v-model="form.rayon_validation" 
-                                    type="number" 
-                                    min="1"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                    :class="{ 'border-red-500': form.errors.rayon_validation }"
-                                    required
-                                />
-                                <p class="mt-1 text-xs text-gray-500">Distance à laquelle la présence de l'utilisateur est confirmée.</p>
-                                <div v-if="form.errors.rayon_validation" class="mt-1 text-sm text-red-600">
-                                    {{ form.errors.rayon_validation }}
-                                </div>
-                            </div>
-
-                            <!-- Boutons d'action -->
-                            <div class="flex items-center justify-end space-x-4 border-t border-gray-100 pt-4">
-                                <button 
-                                    type="button" 
-                                    @click="form.reset()" 
-                                    class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none"
-                                    :disabled="form.processing"
-                                >
-                                    Réinitialiser
-                                </button>
-                                
-                                <button 
-                                    type="submit" 
-                                    class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none disabled:opacity-50"
-                                    :disabled="form.processing"
-                                >
-                                    {{ form.processing ? 'Enregistrement...' : 'Enregistrer' }}
-                                </button>
-                            </div>
-
-                        </form>
+                        </select>
 
                     </div>
-                </div>
+
+                    <!-- RECHERCHE -->
+                    <div>
+
+                        <label class="block mb-2 font-medium">
+                            Recherche
+                        </label>
+
+                        <div class="flex gap-3">
+
+                            <input
+                                v-model="search"
+                                type="text"
+                                placeholder="Ex: Palais des Congrès Cotonou"
+                                class="flex-1 border rounded-xl px-4 py-3"
+                            />
+
+                            <button
+                                type="button"
+                                @click="searchPlace"
+                                class="bg-indigo-600 text-white px-6 rounded-xl"
+                            >
+                                Rechercher
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <!-- NOM -->
+                    <div>
+
+                        <label class="block mb-2 font-medium">
+                            Nom
+                        </label>
+
+                        <input
+                            v-model="form.nom"
+                            type="text"
+                            class="w-full border rounded-xl px-4 py-3"
+                        />
+
+                    </div>
+
+                    <!-- MAP -->
+                    <div>
+
+                        <div class="flex justify-between items-center mb-4">
+
+                            <div>
+
+                                <h2 class="font-semibold">
+                                    Position GPS
+                                </h2>
+
+                                <p class="text-sm text-gray-500">
+                                    Cliquez sur la carte
+                                </p>
+
+                            </div>
+
+                            <button
+                                type="button"
+                                @click="useCurrentLocation"
+                                class="bg-emerald-600 text-white px-5 py-3 rounded-xl"
+                            >
+                                Utiliser ma position
+                            </button>
+
+                        </div>
+
+                        <div
+                            id="map"
+                            class="h-[500px] rounded-2xl border"
+                        ></div>
+
+                    </div>
+
+                    <!-- COORDONNEES -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        <div>
+
+                            <label class="block mb-2 font-medium">
+                                Latitude
+                            </label>
+
+                            <input
+                                v-model="form.latitude"
+                                type="text"
+                                readonly
+                                class="w-full border rounded-xl px-4 py-3 bg-gray-100"
+                            />
+
+                        </div>
+
+                        <div>
+
+                            <label class="block mb-2 font-medium">
+                                Longitude
+                            </label>
+
+                            <input
+                                v-model="form.longitude"
+                                type="text"
+                                readonly
+                                class="w-full border rounded-xl px-4 py-3 bg-gray-100"
+                            />
+
+                        </div>
+
+                    </div>
+
+                    <!-- CONFIG -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        <div>
+
+                            <label class="block mb-2 font-medium">
+                                Ordre
+                            </label>
+
+                            <input
+                                v-model="form.ordre"
+                                type="number"
+                                class="w-full border rounded-xl px-4 py-3"
+                            />
+
+                        </div>
+
+                        <div>
+
+                            <label class="block mb-2 font-medium">
+                                Popularité
+                            </label>
+
+                            <select
+                                v-model="form.popularite"
+                                class="w-full border rounded-xl px-4 py-3"
+                            >
+                                <option :value="1">1</option>
+                                <option :value="2">2</option>
+                                <option :value="3">3</option>
+                                <option :value="4">4</option>
+                                <option :value="5">5</option>
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                    <!-- DESCRIPTION -->
+                    <div>
+
+                        <label class="block mb-2 font-medium">
+                            Description
+                        </label>
+
+                        <textarea
+                            v-model="form.description"
+                            rows="5"
+                            maxlength="500"
+                            class="w-full border rounded-xl px-4 py-3"
+                        ></textarea>
+
+                    </div>
+
+                    <!-- RAYON -->
+                    <div>
+
+                        <label class="block mb-2 font-medium">
+                            Rayon validation (mètres)
+                        </label>
+
+                        <input
+                            v-model="form.rayon_validation"
+                            type="number"
+                            class="w-full border rounded-xl px-4 py-3"
+                        />
+
+                    </div>
+
+                    <!-- ACTIONS -->
+                    <div class="flex justify-end gap-4 pt-6 border-t">
+
+                        <button
+                            type="button"
+                            @click="form.reset()"
+                            class="border px-6 py-3 rounded-xl"
+                        >
+                            Réinitialiser
+                        </button>
+
+                        <button
+                            type="submit"
+                            :disabled="form.processing"
+                            class="bg-indigo-600 text-white px-8 py-3 rounded-xl"
+                        >
+                            {{ form.processing ? 'Enregistrement...' : 'Enregistrer' }}
+                        </button>
+
+                    </div>
+
+                </form>
+
             </div>
-        </template>
+
+        </div>
+
     </AppLayout>
+
 </template>

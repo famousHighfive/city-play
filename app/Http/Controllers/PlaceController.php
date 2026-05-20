@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StorePlaceRequest;
 use App\Models\Environment;
 use App\Models\Place;
 use Illuminate\Http\Request;
@@ -36,18 +37,10 @@ public function index()
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StorePlaceRequest $request)
     {
-        $validated = $request->validate([
-            'environment_id' => 'required|exists:environments,id',
-            'nom' => 'required|string|max:255',
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'description' => 'nullable|string|max:500',
-            'rayon_validation' => 'required|integer|min:1',
-        ]);
 
-        Place::create($validated);
+        Place::create($request->validated());
 
         return redirect()->route('places.index');
     }
