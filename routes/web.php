@@ -77,6 +77,14 @@ Route::prefix('invitation')->name('invitation.')->group(function () {
     Route::post('/{token}/register', [InvitationController::class, 'register'])
         ->name('register');
 
+    // GET de secours : l'URL peut rester sur /register après un POST Inertia (rafraîchissement, etc.)
+    Route::get('/{token}/register', [InvitationController::class, 'registerUrlFallback'])
+        ->name('register.fallback');
+
+    // 2b. Page OTP (GET) — URL stable après l'inscription
+    Route::get('/{token}/otp', [InvitationController::class, 'showOtp'])
+        ->name('otp.show');
+
     // 3. L'invité soumet son code OTP
     Route::post('/{token}/otp/verifier', [OtpController::class, 'verifier'])
         ->name('otp.verifier');
@@ -85,8 +93,6 @@ Route::prefix('invitation')->name('invitation.')->group(function () {
     Route::post('/{token}/otp/renvoyer', [OtpController::class, 'renvoyer'])
         ->name('otp.renvoyer');
 });
-
-require __DIR__ . '/auth.php';
 
 Route::middleware(['auth'])->group(function () {
     // Affichage de l'énigme en cours du joueur
@@ -97,6 +103,5 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/game/{game}/enigme/{enigme}/solution', [GameController::class, 'revealSolution'])->name('game.solution');
     Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])->name('game.skip');
 });
-
 
 require __DIR__.'/auth.php';

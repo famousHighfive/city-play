@@ -7,6 +7,7 @@ use App\Models\Environment;
 use App\Services\InvitationService;
 use App\Services\NotificationService;
 use App\Services\OtpService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -100,10 +101,40 @@ class InvitationController extends Controller
         $otp = $this->otpService->generer($data['destinataire'], $invitation->canal);
         $this->notificationService->envoyerOtp($otp);
 
+        // Redirection GET vers une URL dédiée : sinon Inertia laisse l'adresse sur …/register
+        // (POST seulement) et un rafraîchissement ou une navigation suivante provoque une 405.
+        return redirect()->route('invitation.otp.show', ['token' => $token]);
+    }
+
+    /**
+     * Affiche la saisie OTP après inscription (URL en GET, rafraîchissable).
+     */
+    public function showOtp(string $token): Response|RedirectResponse
+    {
+        $invitation = $this->invitationService->validerToken($token);
+
+        if (!session()->has('invite_destinataire')) {
+            return redirect()->route('invitation.show', ['token' => $token]);
+        }
+
         return Inertia::render('Admin/Invitation/OtpPage', [
             'token'        => $token,
-            'destinataire' => $data['destinataire'],
+            'destinataire' => session('invite_destinataire'),
             'canal'        => $invitation->canal,
         ]);
+    }
+
+    /**
+     * Secours si l'URL reste sur /register (comportement Inertia après POST) : GET autorisé.
+     */
+    public function registerUrlFallback(string $token): RedirectResponse
+    {
+        $this->invitationService->validerToken($token);
+
+        if (session()->has('invite_destinataire')) {
+            return redirect()->route('invitation.otp.show', ['token' => $token]);
+        }
+
+        return redirect()->route('invitation.show', ['token' => $token]);
     }
 }

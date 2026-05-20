@@ -55,8 +55,11 @@ const resumeGame = (game) => {
                             </div>
                             <div class="text-sm text-gray-500 space-y-1 mb-4">
                                 <p>Début : {{ new Date(game.date_debut).toLocaleDateString('fr-FR') }}</p>
+                                <p v-if="game.mode_jeu">Mode : {{ game.mode_jeu }}</p>
                                 <p>Membres : {{ game.nb_membres }}</p>
-                                <p>Moyen de locomotion : {{ game.moyen_locomotion }}</p>
+                                <p>Durée : {{ game.duree_restante ?? game.duree_prevue }} min</p>
+                                <p>Difficulté : {{ game.niveau_difficulte }}</p>
+                                <p>Locomotion : {{ game.moyen_locomotion }}</p>
                             </div>
                             <button 
                                 @click="resumeGame(game)"

@@ -28,7 +28,13 @@ return new class extends Migration
 
             $table->enum('statut', ['en_cours', 'pause', 'terminee', 'abandonnee']);
 
+            $table->enum('mode_jeu', ['equipe', 'challenge'])->default('equipe');
+
             $table->integer('nb_membres');
+
+            $table->json('participants')->nullable();
+
+            $table->string('challenger_email')->nullable();
 
             $table->integer('duree_prevue');
 
