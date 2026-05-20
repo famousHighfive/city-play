@@ -1,5 +1,5 @@
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -26,7 +26,7 @@ const passerSuivant = () => {
 <template>
     <Head title="Partie en cours" />
 
-    <AppLayout>
+    <AuthenticatedLayout>
         <div class="py-12 bg-gray-100 min-h-screen">
             <div class="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
                 
@@ -115,5 +115,5 @@ const passerSuivant = () => {
 
             </div>
         </div>
-    </AppLayout>
+    </AuthenticatedLayout>
 </template>

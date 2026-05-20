@@ -1,5 +1,5 @@
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 
 defineProps({
@@ -24,7 +24,7 @@ const submit = () => {
 <template>
     <Head :title="`Configurer - ${environment.nom}`" />
 
-    <AppLayout>
+    <AuthenticatedLayout>
         <template #default>
             <header class="bg-white shadow">
                 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex items-center space-x-4">
@@ -144,5 +144,5 @@ const submit = () => {
                 </div>
             </div>
         </template>
-    </AppLayout>
+    </AuthenticatedLayout>
 </template>
