@@ -42,7 +42,7 @@ return new class extends Migration
 
             $table->enum('moyen_locomotion', ['pied', 'velo', 'voiture']);
 
-            $table->integer('niveau_difficulte');
+            $table->enum('niveau_difficulte', ['1', '2', '3', 'enfant']);
 
             $table->timestamps();
         });

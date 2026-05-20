@@ -27,20 +27,23 @@ const form = useForm({
     mode_jeu: '',
 
     nb_membres: 1,
-    participants: [''],
+    participants: [],
 
     challenger_email: '',
 
     duree_prevue: props.gameOptions.duree_defaut,
     moyen_locomotion: props.gameOptions.moyens_locomotion[0]?.value ?? 'pied',
-    niveau_difficulte: props.gameOptions.niveaux_difficulte[0]?.value ?? 1,
+    niveau_difficulte: props.gameOptions.niveaux_difficulte[0]?.value ?? '1',
 
     latitude: null,
     longitude: null,
 });
 
+/** Nombre d'emails à saisir = coéquipiers (hors joueur connecté). */
+const nbEmailsCoEquipiers = computed(() => Math.max(0, (parseInt(form.nb_membres) || 1) - 1));
+
 watch(() => form.nb_membres, (value) => {
-    let total = parseInt(value);
+    let total = parseInt(value) || 1;
 
     if (total > props.gameOptions.max_membres) {
         total = props.gameOptions.max_membres;
@@ -52,12 +55,14 @@ watch(() => form.nb_membres, (value) => {
         form.nb_membres = 1;
     }
 
-    if (total > form.participants.length) {
-        while (form.participants.length < total) {
+    const additional = Math.max(0, total - 1);
+
+    if (additional > form.participants.length) {
+        while (form.participants.length < additional) {
             form.participants.push('');
         }
     } else {
-        form.participants = form.participants.slice(0, total);
+        form.participants = form.participants.slice(0, additional);
     }
 });
 
@@ -105,6 +110,10 @@ const payloadPourBackend = (data) => {
         delete payload.participants;
     } else {
         delete payload.challenger_email;
+        const nb = parseInt(payload.nb_membres) || 1;
+        if (nb <= 1) {
+            payload.participants = [];
+        }
     }
 
     return payload;
@@ -129,7 +138,7 @@ const submit = () => {
 
 const difficultyLabel = computed(() => {
     const niveau = props.gameOptions.niveaux_difficulte.find(
-        (n) => n.value === Number(form.niveau_difficulte)
+        (n) => String(n.value) === String(form.niveau_difficulte)
     );
     return niveau ? `${niveau.emoji} ${niveau.label}` : '';
 });
@@ -295,7 +304,7 @@ const reprendrePartie = () => {
                             >
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                        Nombre de membres (max {{ gameOptions.max_membres }})
+                                        Nombre de membres, vous inclus (max {{ gameOptions.max_membres }})
                                     </label>
 
                                     <input
@@ -306,11 +315,18 @@ const reprendrePartie = () => {
                                         required
                                         class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                     />
+
+                                    <p
+                                        v-if="nbEmailsCoEquipiers === 0"
+                                        class="mt-2 text-sm text-gray-500"
+                                    >
+                                        Vous jouez seul : aucun email supplémentaire à renseigner.
+                                    </p>
                                 </div>
 
-                                <div>
+                                <div v-if="nbEmailsCoEquipiers > 0">
                                     <label class="block text-sm font-semibold text-gray-700 mb-4">
-                                        Emails des participants
+                                        Emails des coéquipiers ({{ nbEmailsCoEquipiers }} requis)
                                     </label>
 
                                     <div class="grid md:grid-cols-2 gap-4">
@@ -320,7 +336,7 @@ const reprendrePartie = () => {
                                             v-model="form.participants[index]"
                                             type="email"
                                             required
-                                            :placeholder="`Participant ${index + 1}`"
+                                            :placeholder="`Coéquipier ${index + 1}`"
                                             class="rounded-2xl border-gray-200 bg-gray-50 px-5 py-4 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                         />
                                     </div>
@@ -522,16 +538,27 @@ const reprendrePartie = () => {
                                     </span>
                                 </div>
 
-                                <div
-                                    v-if="form.mode_jeu === 'equipe'"
-                                    class="grid md:grid-cols-2 gap-4"
-                                >
-                                    <div
-                                        v-for="(participant, index) in form.participants"
-                                        :key="index"
-                                        class="rounded-2xl bg-white px-5 py-4 shadow-sm"
+                                <div v-if="form.mode_jeu === 'equipe'">
+                                    <p
+                                        v-if="form.nb_membres <= 1"
+                                        class="rounded-2xl bg-white px-5 py-4 shadow-sm text-gray-700"
                                     >
-                                        👤 {{ participant }}
+                                        👤 Vous seul (aucun coéquipier)
+                                    </p>
+                                    <div
+                                        v-else
+                                        class="grid md:grid-cols-2 gap-4"
+                                    >
+                                        <div class="rounded-2xl bg-white px-5 py-4 shadow-sm">
+                                            👤 Vous (organisateur)
+                                        </div>
+                                        <div
+                                            v-for="(participant, index) in form.participants"
+                                            :key="index"
+                                            class="rounded-2xl bg-white px-5 py-4 shadow-sm"
+                                        >
+                                            👤 {{ participant }}
+                                        </div>
                                     </div>
                                 </div>
 

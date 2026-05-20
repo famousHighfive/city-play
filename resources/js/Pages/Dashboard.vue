@@ -71,11 +71,13 @@ const resumeGame = (game) => {
                     </div>
                 </div>
 
-                <!-- Environnements disponibles -->
+                <!-- Environnements accessibles (invitation acceptée) -->
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Villes disponibles</h3>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        {{ environments.length === 1 ? 'Votre ville' : 'Vos villes' }}
+                    </h3>
                     <div v-if="environments.length === 0" class="text-center py-12 bg-white shadow-sm sm:rounded-lg">
-                        <p class="text-gray-500">Aucune ville disponible pour le moment.</p>
+                        <p class="text-gray-500">Aucune invitation acceptée pour le moment.</p>
                     </div>
                     <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div v-for="env in environments" :key="env.id" class="bg-white shadow-sm sm:rounded-lg p-6">

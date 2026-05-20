@@ -14,6 +14,8 @@ class GameController extends Controller
 {
     public function configure(Environment $environment)
     {
+        $this->authorizePlayerEnvironment($environment);
+
         $existingGame = Game::where('user_id', auth()->id())
             ->where('environment_id', $environment->id)
             ->where('statut', 'en_cours')
@@ -28,26 +30,36 @@ class GameController extends Controller
 
     public function startNewGame(Request $request, Environment $environment)
     {
+        $this->authorizePlayerEnvironment($environment);
+
         $validated = $request->validate([
             'mode_jeu' => ['required', Rule::in(['equipe', 'challenge'])],
             'duree_prevue' => 'required|integer|min:1',
             'moyen_locomotion' => ['required', Rule::in(['pied', 'velo', 'voiture'])],
-            'niveau_difficulte' => 'required|integer|in:1,2,3',
-            'nb_membres' => 'required_if:mode_jeu,equipe|nullable|integer|min:1|max:9',
-            'participants' => 'required_if:mode_jeu,equipe|nullable|array',
-            'participants.*' => 'required|email',
+            'niveau_difficulte' => ['required', Rule::in(['1', '2', '3', 'enfant'])],
+            'nb_membres' => 'required_if:mode_jeu,equipe|nullable|integer|min:1|max:10',
+            'participants' => 'nullable|array',
+            'participants.*' => 'required|email|distinct',
             'challenger_email' => 'required_if:mode_jeu,challenge|nullable|email',
         ]);
 
         if ($validated['mode_jeu'] === 'equipe') {
             $nbMembres = (int) $validated['nb_membres'];
-            $participants = array_values($validated['participants'] ?? []);
+            $emailsCoEquipiers = array_values($validated['participants'] ?? []);
+            $nbCoEquipiersAttendu = max(0, $nbMembres - 1);
 
-            if (count($participants) !== $nbMembres) {
+            if (count($emailsCoEquipiers) !== $nbCoEquipiersAttendu) {
                 throw ValidationException::withMessages([
-                    'participants' => 'Le nombre d\'emails doit correspondre au nombre de membres.',
+                    'participants' => $nbCoEquipiersAttendu === 0
+                        ? 'Aucun email supplémentaire n\'est requis lorsque vous jouez seul.'
+                        : "Indiquez {$nbCoEquipiersAttendu} email(s) pour vos coéquipiers.",
                 ]);
             }
+
+            $captainEmail = auth()->user()->email;
+            $participants = $captainEmail
+                ? array_merge([$captainEmail], $emailsCoEquipiers)
+                : $emailsCoEquipiers;
         } else {
             $nbMembres = 1;
             $participants = null;
@@ -176,6 +188,24 @@ class GameController extends Controller
     }
 
     /**
+     * Un joueur ne peut configurer / jouer que sur un environnement invité.
+     */
+    private function authorizePlayerEnvironment(Environment $environment): void
+    {
+        $user = auth()->user();
+
+        if ($user->isAdmin()) {
+            return;
+        }
+
+        abort_unless(
+            $user->hasAccessToEnvironment($environment),
+            403,
+            'Vous n\'avez pas accès à cet environnement.'
+        );
+    }
+
+    /**
      * Options affichées dynamiquement dans ConfigureGame.vue.
      */
     private function gameOptions(Environment $environment): array
@@ -187,7 +217,7 @@ class GameController extends Controller
             ->count();
 
         return [
-            'max_membres' => 9,
+            'max_membres' => 10,
             'duree_defaut' => 60,
             'duree_min' => 1,
             'enigmes_disponibles' => $enigmesDisponibles,
@@ -195,7 +225,7 @@ class GameController extends Controller
                 [
                     'value' => 'equipe',
                     'label' => 'Mode Équipe',
-                    'description' => 'Jusqu\'à 9 joueurs dans une aventure collaborative.',
+                    'description' => 'Jusqu\'à 10 joueurs (vous inclus). Seul par défaut, emails requis pour les coéquipiers.',
                     'emoji' => '👥',
                 ],
                 [
@@ -211,9 +241,10 @@ class GameController extends Controller
                 ['value' => 'voiture', 'label' => 'Voiture', 'emoji' => '🚗'],
             ],
             'niveaux_difficulte' => [
-                ['value' => 1, 'label' => 'Facile', 'emoji' => '🟢'],
-                ['value' => 2, 'label' => 'Moyen', 'emoji' => '🟠'],
-                ['value' => 3, 'label' => 'Difficile', 'emoji' => '🔴'],
+                ['value' => '1', 'label' => 'Facile', 'emoji' => '🟢'],
+                ['value' => '2', 'label' => 'Moyen', 'emoji' => '🟠'],
+                ['value' => '3', 'label' => 'Difficile', 'emoji' => '🔴'],
+                ['value' => 'enfant', 'label' => 'Enfant', 'emoji' => '🧒'],
             ],
         ];
     }
@@ -227,9 +258,10 @@ class GameController extends Controller
                 'voiture' => '🚗 Voiture',
             ],
             'niveaux_difficulte' => [
-                1 => '🟢 Facile',
-                2 => '🟠 Moyen',
-                3 => '🔴 Difficile',
+                '1' => '🟢 Facile',
+                '2' => '🟠 Moyen',
+                '3' => '🔴 Difficile',
+                'enfant' => '🧒 Enfant',
             ],
             'modes' => [
                 'equipe' => '👥 Équipe',

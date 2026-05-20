@@ -54,6 +54,7 @@ class OtpController extends Controller
                             : null,
             'password' => Hash::make(session('invite_password')),
             'role'     => 'player',
+            'email_verified_at' => now(),
         ]);
 
         // Marque l'invitation comme utilisée et lie le joueur
@@ -72,8 +73,8 @@ class OtpController extends Controller
             'invite_token',
         ]);
 
-        // Redirige vers le dashboard du jeu
-        return redirect()->route('dashboard');
+        // Redirige directement vers l'environnement de l'invitation acceptée
+        return redirect()->route('game.configure', $invitation->environment_id);
     }
 
     /**

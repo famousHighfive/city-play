@@ -9,21 +9,23 @@ class Place extends Model
     protected $fillable = [
         'environment_id',
         'nom',
+        'description',
         'latitude',
         'longitude',
-        'description',
         'rayon_validation',
+        'ordre',
+        'popularite',
+        'is_active',
+        'image_principale',
     ];
 
-    // un lieu appartient à un environnement
-     public function environment()
+    public function environment()
     {
         return $this->belongsTo(Environment::class);
     }
 
-    // un lieu peut avoir plusieurs énigmes
     public function enigmes()
     {
-        return $this->hasMany(Enigme::class);   
+        return $this->hasMany(Enigme::class);
     }
 }
