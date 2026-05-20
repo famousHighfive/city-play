@@ -1,9 +1,10 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { watch } from 'vue';
 
 // Récupération des lieux (places) passés depuis le contrôleur Laravel
-defineProps({
+const props = defineProps({
     places: {
         type: Array,
         required: true
@@ -18,8 +19,18 @@ const form = useForm({
     solution: '',
     indice_1: '',
     indice_2: '',
-    image: null, // Changé à null pour gérer le téléversement de fichier
+    image: null, 
     actif: true,
+});
+
+watch(() => form.place_id, (value) => {
+
+    const place = props.places.find(p => p.id == value);
+
+    if (place) {
+
+        form.solution = place.nom;
+    }
 });
 
 // Fonction de soumission du formulaire
@@ -138,23 +149,6 @@ const submit = () => {
                                 />
                                 <div v-if="form.errors.indice_2" class="mt-1 text-sm text-red-600">
                                     {{ form.errors.indice_2 }}
-                                </div>
-                            </div>
-
-                            <!-- Champ Solution -->
-                            <div>
-                                <label for="solution" class="block text-sm font-medium text-gray-700">Solution de l'énigme</label>
-                                <input 
-                                    id="solution" 
-                                    v-model="form.solution" 
-                                    type="text"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                    :class="{ 'border-red-500': form.errors.solution }"
-                                    placeholder="La bonne réponse ou l'explication finale..."
-                                    required
-                                />
-                                <div v-if="form.errors.solution" class="mt-1 text-sm text-red-600">
-                                    {{ form.errors.solution }}
                                 </div>
                             </div>
 
