@@ -33,7 +33,7 @@ const form = useForm({
 
     duree_prevue: props.gameOptions.duree_defaut,
     moyen_locomotion: props.gameOptions.moyens_locomotion[0]?.value ?? 'pied',
-    niveau_difficulte: props.gameOptions.niveaux_difficulte[0]?.value ?? '1',
+    niveau_difficulte: props.gameOptions.niveaux_difficulte[0]?.value ?? 'easy',
 
     latitude: null,
     longitude: null,
@@ -79,6 +79,7 @@ const selectMode = (mode) => {
     showModeModal.value = false;
 };
 
+
 const capturePosition = () => {
     if (!navigator.geolocation) {
         alert('La géolocalisation n’est pas disponible.');
@@ -103,14 +104,20 @@ const capturePosition = () => {
 };
 
 const payloadPourBackend = (data) => {
-    const { latitude, longitude, ...payload } = data;
+
+    const payload = { ...data };
 
     if (payload.mode_jeu === 'challenge') {
+
         delete payload.nb_membres;
         delete payload.participants;
+
     } else {
+
         delete payload.challenger_email;
+
         const nb = parseInt(payload.nb_membres) || 1;
+
         if (nb <= 1) {
             payload.participants = [];
         }

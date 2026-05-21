@@ -6,6 +6,7 @@ use App\Models\Game;
 use Illuminate\Http\Request;
 use App\Models\Enigme;
 use Inertia\Inertia;
+use App\Services\GamePathService;
 use App\Models\Environment;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,7 @@ class GameController extends Controller
         ]);
     }
 
+
     public function startNewGame(Request $request, Environment $environment)
     {
         $this->authorizePlayerEnvironment($environment);
@@ -36,10 +38,12 @@ class GameController extends Controller
             'mode_jeu' => ['required', Rule::in(['equipe', 'challenge'])],
             'duree_prevue' => 'required|integer|min:1',
             'moyen_locomotion' => ['required', Rule::in(['pied', 'velo', 'voiture'])],
-            'niveau_difficulte' => ['required', Rule::in(['1', '2', '3', 'enfant'])],
+            'niveau_difficulte' => ['required', Rule::in(['easy', 'medium', 'hard', 'kid'])],
             'nb_membres' => 'required_if:mode_jeu,equipe|nullable|integer|min:1|max:10',
             'participants' => 'nullable|array',
             'participants.*' => 'required|email|distinct',
+            'latitude' => 'required|numeric',
+            'longitude' => 'required|numeric',
             'challenger_email' => 'required_if:mode_jeu,challenge|nullable|email',
         ]);
 
@@ -89,30 +93,52 @@ class GameController extends Controller
             'duree_restante' => $validated['duree_prevue'],
             'moyen_locomotion' => $validated['moyen_locomotion'],
             'niveau_difficulte' => $validated['niveau_difficulte'],
+            'latitude_depart' => $validated['latitude'],
+            'longitude_depart' => $validated['longitude'],
         ]);
 
-        $enigmes = $this->selectionnerEnigmes(
-            $environment,
-            (string) $validated['niveau_difficulte'],
-            $validated['moyen_locomotion'],
-            (int) $validated['duree_prevue'],
-        );
+        $parcours = app(GamePathService::class)
 
-        if ($enigmes->isEmpty()) {
+            ->construireParcours(
+
+                $environment,
+
+                $validated['latitude'],
+                $validated['longitude'],
+
+                $validated['niveau_difficulte'],
+
+                $validated['moyen_locomotion'],
+
+                (int) $validated['duree_prevue'],
+            );
+
+        if ($parcours->isEmpty()) {
             $game->delete();
 
             return back()->with('error', 'Cette ville ne contient aucune énigme active pour le moment.');
         }
 
-        foreach ($enigmes as $index => $enigme) {
-            $game->enigmes()->attach($enigme->id, [
-                'ordre' => $index + 1,
-                'statut' => $index === 0 ? 'en_cours' : 'a_faire',
-                'nb_indices_demandes' => 0,
-                'solution_affichee' => false,
-            ]);
-        }
+        foreach ($parcours as $step) {
+            $game->enigmes()->attach(
 
+                $step['enigme']->id,
+
+                [
+
+                    'ordre' => $step['ordre'],
+
+                    'statut' => $step['ordre'] === 1
+                        ? 'en_cours'
+                        : 'a_faire',
+
+                    'nb_indices_demandes' => 0,
+
+                    'solution_affichee' => false,
+                ]
+            );
+        }
+        // dd($parcours);
         return to_route('game.show', $game->id);
     }
 
@@ -187,9 +213,6 @@ class GameController extends Controller
         return to_route('dashboard')->with('success', 'Félicitations, vous avez terminé l\'environnement !');
     }
 
-    /**
-     * Un joueur ne peut configurer / jouer que sur un environnement invité.
-     */
     private function authorizePlayerEnvironment(Environment $environment): void
     {
         $user = auth()->user();
@@ -205,9 +228,6 @@ class GameController extends Controller
         );
     }
 
-    /**
-     * Options affichées dynamiquement dans ConfigureGame.vue.
-     */
     private function gameOptions(Environment $environment): array
     {
         $enigmesDisponibles = Enigme::whereHas('place', function ($query) use ($environment) {
@@ -241,10 +261,10 @@ class GameController extends Controller
                 ['value' => 'voiture', 'label' => 'Voiture', 'emoji' => '🚗'],
             ],
             'niveaux_difficulte' => [
-                ['value' => '1', 'label' => 'Facile', 'emoji' => '🟢'],
-                ['value' => '2', 'label' => 'Moyen', 'emoji' => '🟠'],
-                ['value' => '3', 'label' => 'Difficile', 'emoji' => '🔴'],
-                ['value' => 'enfant', 'label' => 'Enfant', 'emoji' => '🧒'],
+                ['value' => 'easy', 'label' => 'Facile', 'emoji' => '🟢'],
+                ['value' => 'medium', 'label' => 'Moyen', 'emoji' => '🟠'],
+                ['value' => 'hard', 'label' => 'Difficile', 'emoji' => '🔴'],
+                ['value' => 'kid', 'label' => 'Enfant', 'emoji' => '🧒'],
             ],
         ];
     }
@@ -258,10 +278,10 @@ class GameController extends Controller
                 'voiture' => '🚗 Voiture',
             ],
             'niveaux_difficulte' => [
-                '1' => '🟢 Facile',
-                '2' => '🟠 Moyen',
-                '3' => '🔴 Difficile',
-                'enfant' => '🧒 Enfant',
+                'easy' => '🟢 Facile',
+                'medium' => '🟠 Moyen',
+                'hard' => '🔴 Difficile',
+                'kid' => '🧒 Enfant',
             ],
             'modes' => [
                 'equipe' => '👥 Équipe',
@@ -270,44 +290,148 @@ class GameController extends Controller
         ];
     }
 
-    /**
-     * Nombre d'énigmes selon durée et locomotion (instructions projet).
-     */
-    private function nombreEnigmesPourPartie(string $moyenLocomotion, int $dureePrevue): int
-    {
-        $minutesParEnigme = match ($moyenLocomotion) {
-            'pied' => 20,
-            'velo' => 15,
-            'voiture' => 10,
-            default => 20,
-        };
-
-        return max(1, (int) floor($dureePrevue / $minutesParEnigme));
-    }
-
-    private function selectionnerEnigmes(
-        Environment $environment,
-        string $niveauDifficulte,
-        string $moyenLocomotion,
-        int $dureePrevue,
+    public function validatePosition(Request $request, Game $game
     ) {
-        $query = Enigme::whereHas('place', function ($q) use ($environment) {
-            $q->where('environment_id', $environment->id);
-        })
-            ->where('actif', true)
-            ->with('place');
 
-        $enigmes = (clone $query)->where('niveau', $niveauDifficulte)->get();
+        $request->validate([
 
-        if ($enigmes->isEmpty()) {
-            $enigmes = $query->get();
+            'latitude' => [
+                'required',
+                'numeric'
+            ],
+
+            'longitude' => [
+                'required',
+                'numeric'
+            ],
+
+            'enigme_id' => [
+                'required',
+                'exists:enigmes,id'
+            ],
+
+        ]);
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Récupération énigme + lieu
+        |--------------------------------------------------------------------------
+        */
+
+        $enigme = Enigme::with('place')
+            ->findOrFail(
+                $request->enigme_id
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Calcul distance GPS
+        |--------------------------------------------------------------------------
+        */
+
+        $distance = app(GamePathService::class)
+            ->calculerDistance(
+
+                $request->latitude,
+                $request->longitude,
+
+                $enigme->place->latitude,
+                $enigme->place->longitude
+
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Vérification rayon GPS
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $distance >
+            $enigme->place->rayon_validation
+        ) {
+
+            return back()->with(
+                'error',
+                'Vous êtes trop loin du lieu.'
+            );
+
         }
 
-        $limite = $this->nombreEnigmesPourPartie($moyenLocomotion, $dureePrevue);
 
-        return $enigmes
-            ->sortBy(fn (Enigme $e) => $e->place_id)
-            ->take($limite)
-            ->values();
+        /*
+        |--------------------------------------------------------------------------
+        | Marquer énigme résolue
+        |--------------------------------------------------------------------------
+        */
+
+        $game->enigmes()
+            ->updateExistingPivot(
+                $enigme->id,
+                [
+
+                    'statut' => 'resolue',
+
+                    'resolue_at' => now(),
+
+                ]
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Chercher prochaine énigme
+        |--------------------------------------------------------------------------
+        */
+
+        $nextEnigme = $game->enigmes()
+
+            ->wherePivot(
+                'statut',
+                'en_attente'
+            )
+
+            ->orderByPivot('ordre')
+
+            ->first();
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Si plus d'énigme
+        |--------------------------------------------------------------------------
+        */
+
+        if (!$nextEnigme) {
+
+            $game->update([
+                'statut' => 'terminee'
+            ]);
+
+            return redirect()
+                ->route(
+                    'game.finish',
+                    $game->id
+                );
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Sinon retour jeu
+        |--------------------------------------------------------------------------
+        */
+
+        return redirect()
+            ->route(
+                'game.show',
+                $game->id
+            );
+
     }
+
 }

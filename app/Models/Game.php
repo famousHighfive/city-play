@@ -15,6 +15,8 @@ class Game extends Model
         'mode_jeu',
         'nb_membres',
         'participants',
+        'latitude',
+        'longitude',
         'challenger_email',
         'duree_prevue',
         'duree_restante',

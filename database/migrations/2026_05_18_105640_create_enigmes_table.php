@@ -18,7 +18,7 @@ return new class extends Migration
                 ->constrained()
                 ->cascadeOnDelete();
 
-            $table->enum('niveau', ['1', '2', '3', 'enfant']);
+            $table->enum('niveau', ['easy', 'medium', 'hard', 'kid']);
 
             $table->text('texte'); // La question/énigme à afficher
 

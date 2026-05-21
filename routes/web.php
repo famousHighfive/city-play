@@ -123,6 +123,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])
         ->name('game.skip');
+
+        Route::post('/games/{game}/validate-position', [
+    GameController::class,
+    'validatePosition'
+])->name('game.validate.position');
 });
 
 /*
