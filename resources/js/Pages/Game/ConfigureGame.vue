@@ -16,10 +16,14 @@ const props = defineProps({
         type: Object,
         default: null,
     },
+    afficher_modal_mode: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const currentStep = ref(1);
-const showModeModal = ref(true);
+const showModeModal = ref(props.afficher_modal_mode);
 const positionCaptured = ref(false);
 const loadingLaunch = ref(false);
 
@@ -70,8 +74,8 @@ const nextStep = () => {
     currentStep.value++;
 };
 
-const previousPage = () => {
-    window.history.back();
+const retourDashboard = () => {
+    router.visit(route('dashboard'));
 };
 
 const selectMode = (mode) => {
@@ -160,8 +164,8 @@ const peutLancer = computed(
 );
 
 const reprendrePartie = () => {
-    if (props.existingGame) {
-        router.visit(route('game.show', props.existingGame.id));
+    if (props.existingGame?.id) {
+        router.visit(route('game.resume', props.existingGame.id));
     }
 };
 </script>
@@ -178,13 +182,15 @@ const reprendrePartie = () => {
             >
                 <div class="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <p class="text-sm text-amber-900">
-                        Vous avez déjà une partie en cours sur cet environnement.
+                        Partie en cours — reprendre à l'énigme
+                        <strong>{{ existingGame.etape_reprise }}</strong>
+                        / {{ existingGame.progression?.total ?? '?' }}
                     </p>
                     <button
                         @click="reprendrePartie"
                         class="rounded-xl bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700"
                     >
-                        Reprendre la partie
+                        Reprendre où j'en étais
                     </button>
                 </div>
             </div>
@@ -198,7 +204,7 @@ const reprendrePartie = () => {
                     <div class="absolute top-0 right-0 h-40 w-40 bg-indigo-100 rounded-full blur-3xl opacity-60"></div>
 
                     <button
-                        @click="previousPage"
+                        @click="retourDashboard"
                         class="mb-6 inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
                     >
                         ← Retour

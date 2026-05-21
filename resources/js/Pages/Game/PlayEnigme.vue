@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import L from 'leaflet';
 
 const props = defineProps({
@@ -9,21 +9,27 @@ const props = defineProps({
     enigme: Object,
     progression: Object,
     labels: Object,
+    modal_lieu: {
+        type: Object,
+        default: null,
+    },
+    gps_error: {
+        type: String,
+        default: null,
+    },
 });
 
 const mapContainer = ref(null);
 const mapInstance = ref(null);
 const playerMarker = ref(null);
-const validationMessage = ref(null);
-const validationOk = ref(null);
 const gpsLoading = ref(false);
+const gpsError = ref(props.gps_error);
 
-let targetMarker = null;
-let radiusCircle = null;
+const page = usePage();
+const showModal = ref(false);
+const modalLieu = ref(null);
 
-const cibleLat = computed(() => Number(props.enigme.place.latitude));
-const cibleLng = computed(() => Number(props.enigme.place.longitude));
-const rayon = computed(() => Number(props.enigme.place.rayon_validation ?? 30));
+const defaultMapCenter = [6.370293, 2.391236];
 
 const locomotionLabel = computed(
     () => props.labels.moyens_locomotion[props.game.moyen_locomotion] ?? props.game.moyen_locomotion
@@ -37,35 +43,135 @@ const modeLabel = computed(
     () => props.labels.modes[props.game.mode_jeu] ?? props.game.mode_jeu
 );
 
-const demanderIndice = () => {
-    router.post(route('game.indice', [props.game.id, props.enigme.id]));
+const peutValiderGps = computed(
+    () => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee
+);
+
+const peutVoirSolution = computed(() => props.enigme.pivot.statut === 'en_cours');
+
+const peutPasserSuivant = computed(
+    () =>
+        props.enigme.pivot.statut === 'resolue'
+        || props.enigme.pivot.statut === 'non_resolue'
+        || props.enigme.pivot.solution_affichee
+);
+
+const peutPasserAutreEnigme = computed(
+    () => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee
+);
+
+const partieEnPausePossible = computed(() => props.game.statut === 'en_cours');
+
+const ouvrirModal = async (data) => {
+    if (!data?.nom) {
+        return;
+    }
+    modalLieu.value = data;
+    await nextTick();
+    showModal.value = true;
 };
 
-const voirSolution = () => {
-    if (confirm('Êtes-vous sûr ? Découvrir la solution marquera l\'énigme comme non résolue.')) {
-        router.post(route('game.solution', [props.game.id, props.enigme.id]));
+const fermerModal = () => {
+    showModal.value = false;
+};
+
+const ouvrirModalDepuisFlash = (data) => {
+    if (data?.nom) {
+        ouvrirModal(data);
     }
 };
 
+watch(
+    () => props.modal_lieu,
+    ouvrirModalDepuisFlash,
+    { immediate: true, deep: true }
+);
+
+watch(
+    () => page.props.flash?.modal_lieu,
+    ouvrirModalDepuisFlash,
+    { immediate: true, deep: true }
+);
+
+watch(
+    () => props.gps_error ?? page.props.flash?.gps_error,
+    (msg) => {
+        gpsError.value = msg ?? null;
+    },
+    { immediate: true }
+);
+
+const routeParams = () => ({
+    game: props.game.id,
+    enigme: props.enigme.id,
+});
+
+const demanderIndice = () => {
+    router.post(route('game.indice', routeParams()), {}, {
+        preserveScroll: true,
+        preserveState: false,
+    });
+};
+
+const voirSolution = () => {
+    router.post(route('game.solution', routeParams()), {}, {
+        preserveScroll: true,
+        preserveState: false,
+    });
+};
+
 const passerSuivant = () => {
-    router.post(route('game.skip', [props.game.id, props.enigme.id]));
+    fermerModal();
+    router.post(route('game.skip', routeParams()), {}, {
+        preserveState: false,
+    });
 };
 
-const distanceMetres = (lat1, lon1, lat2, lon2) => {
-    const R = 6371000;
-    const toRad = (deg) => (deg * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const afficherPositionJoueur = (lat, lng, distance) => {
-    if (!mapInstance.value) {
+const passerAutreEnigme = () => {
+    if (!confirm('Passer à une autre énigme sans résoudre celle-ci ?')) {
         return;
+    }
+    fermerModal();
+    router.post(route('game.skip', routeParams()), {}, {
+        preserveState: false,
+    });
+};
+
+const mettreEnPause = () => {
+    if (!confirm('Mettre la partie en pause ? Vous pourrez reprendre depuis le tableau de bord.')) {
+        return;
+    }
+    router.post(route('game.pause', props.game.id));
+};
+
+const retourDashboard = () => {
+    router.visit(route('dashboard'));
+};
+
+const initMap = (lat, lng) => {
+    if (!mapContainer.value) {
+        return;
+    }
+
+    if (mapInstance.value) {
+        mapInstance.value.remove();
+        mapInstance.value = null;
+    }
+
+    mapInstance.value = L.map(mapContainer.value).setView([lat, lng], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(mapInstance.value);
+};
+
+const afficherPositionJoueur = (lat, lng) => {
+    if (!mapContainer.value) {
+        return;
+    }
+
+    if (!mapInstance.value) {
+        initMap(lat, lng);
     }
 
     if (playerMarker.value) {
@@ -82,46 +188,7 @@ const afficherPositionJoueur = (lat, lng, distance) => {
         .addTo(mapInstance.value)
         .bindPopup('Votre position');
 
-    const bounds = L.latLngBounds([
-        [cibleLat.value, cibleLng.value],
-        [lat, lng],
-    ]);
-    mapInstance.value.fitBounds(bounds.pad(0.25));
-
-    validationOk.value = distance <= rayon.value;
-    validationMessage.value = validationOk.value
-        ? `Bonne position ! Vous êtes à ${Math.round(distance)} m du lieu.`
-        : `Vous êtes à ${Math.round(distance)} m du lieu (rayon autorisé : ${rayon.value} m). Rapprochez-vous.`;
-};
-
-const initMap = () => {
-    if (!mapContainer.value || mapInstance.value) {
-        return;
-    }
-
-    mapInstance.value = L.map(mapContainer.value).setView([cibleLat.value, cibleLng.value], 16);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(mapInstance.value);
-
-    targetMarker = L.circleMarker([cibleLat.value, cibleLng.value], {
-        radius: 9,
-        color: '#dc2626',
-        fillColor: '#ef4444',
-        fillOpacity: 1,
-        weight: 2,
-    })
-        .addTo(mapInstance.value)
-        .bindPopup(`Lieu : ${props.enigme.place.nom}`);
-
-    radiusCircle = L.circle([cibleLat.value, cibleLng.value], {
-        radius: rayon.value,
-        color: '#16a34a',
-        fillColor: '#22c55e',
-        fillOpacity: 0.15,
-        weight: 2,
-    }).addTo(mapInstance.value);
+    mapInstance.value.setView([lat, lng], 16);
 };
 
 const validerPosition = () => {
@@ -131,16 +198,26 @@ const validerPosition = () => {
     }
 
     gpsLoading.value = true;
-    validationMessage.value = null;
+    gpsError.value = null;
 
     navigator.geolocation.getCurrentPosition(
         (position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            const distance = distanceMetres(lat, lng, cibleLat.value, cibleLng.value);
 
-            afficherPositionJoueur(lat, lng, distance);
-            gpsLoading.value = false;
+            afficherPositionJoueur(lat, lng);
+
+            router.post(
+                route('game.valider', routeParams()),
+                { latitude: lat, longitude: lng },
+                {
+                    preserveScroll: true,
+                    preserveState: false,
+                    onFinish: () => {
+                        gpsLoading.value = false;
+                    },
+                }
+            );
         },
         () => {
             gpsLoading.value = false;
@@ -151,7 +228,9 @@ const validerPosition = () => {
 };
 
 onMounted(() => {
-    initMap();
+    if (mapContainer.value) {
+        initMap(defaultMapCenter[0], defaultMapCenter[1]);
+    }
 });
 
 onUnmounted(() => {
@@ -178,10 +257,31 @@ onUnmounted(() => {
                 </div>
 
                 <div class="bg-indigo-600 text-white p-4 rounded-t-lg shadow">
-                    <p class="text-xs uppercase tracking-wider font-semibold opacity-75">
-                        Étape {{ progression.etape }} / {{ progression.total }}
-                    </p>
-                    <h1 class="text-xl font-bold">Lieu : {{ enigme.place.nom }}</h1>
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-wider font-semibold opacity-75">
+                                Énigme {{ progression.etape }} / {{ progression.total }}
+                            </p>
+                            <h1 class="text-xl font-bold">À résoudre</h1>
+                        </div>
+                        <div class="flex flex-col gap-2 shrink-0">
+                            <button
+                                v-if="partieEnPausePossible"
+                                type="button"
+                                @click="mettreEnPause"
+                                class="rounded-lg bg-white/20 hover:bg-white/30 px-3 py-1.5 text-xs font-semibold transition"
+                            >
+                                ⏸ Pause
+                            </button>
+                            <button
+                                type="button"
+                                @click="retourDashboard"
+                                class="rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition"
+                            >
+                                ← Dashboard
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="bg-white p-6 shadow rounded-b-lg space-y-6">
@@ -194,17 +294,20 @@ onUnmounted(() => {
                     </div>
 
                     <div class="prose max-w-none">
-                        <h3 class="text-gray-500 text-sm font-medium">Votre Mission :</h3>
+                        <h3 class="text-gray-500 text-sm font-medium">Votre énigme</h3>
                         <p class="text-lg text-gray-800 font-serif italic">" {{ enigme.texte }} "</p>
                     </div>
 
-                    <!-- Carte Leaflet : lieu cible + zone de validation -->
-                    <div class="border-t border-gray-100 pt-4 space-y-3">
+                    <div
+                        v-if="peutValiderGps"
+                        class="border-t border-gray-100 pt-4 space-y-3"
+                    >
                         <h4 class="text-sm font-semibold text-gray-700">
-                            Localisation du lieu
+                            Valider votre position
                         </h4>
                         <p class="text-xs text-gray-500">
-                            Cercle vert = zone de validation ({{ rayon }} m). Validez votre position GPS sur la carte.
+                            Votre position sera comparée au lieu à trouver (rayon
+                            {{ enigme.lieu_validation.rayon_validation }} m).
                         </p>
                         <div
                             id="play-map"
@@ -212,13 +315,10 @@ onUnmounted(() => {
                             class="h-72 w-full rounded-xl border border-gray-200 z-0"
                         />
                         <p
-                            v-if="validationMessage"
-                            class="text-sm rounded-lg px-4 py-3"
-                            :class="validationOk
-                                ? 'bg-green-50 text-green-800 border border-green-200'
-                                : 'bg-amber-50 text-amber-900 border border-amber-200'"
+                            v-if="gpsError"
+                            class="text-sm rounded-lg px-4 py-3 bg-amber-50 text-amber-900 border border-amber-200"
                         >
-                            {{ validationMessage }}
+                            {{ gpsError }}
                         </p>
                     </div>
 
@@ -251,38 +351,16 @@ onUnmounted(() => {
                         </button>
                     </div>
 
-                    <div class="border-t border-gray-100 pt-4 space-y-3">
-                        <div
-                            v-if="enigme.pivot.solution_affichee"
-                            class="bg-red-50 border-l-4 border-red-500 p-4 rounded text-red-900"
-                        >
-                            <h4 class="font-bold">Solution révélée :</h4>
-                            <p class="mt-1 text-sm font-mono">{{ enigme.solution }}</p>
-                        </div>
+                    <div class="border-t border-gray-100 pt-4 space-y-4">
+                        <h4 class="text-sm font-semibold text-gray-700">Actions</h4>
 
-                        <div class="flex flex-wrap items-center justify-between gap-4 pt-4">
+                        <div class="flex flex-wrap gap-3">
                             <button
-                                v-if="!enigme.pivot.solution_affichee"
-                                @click="voirSolution"
-                                class="text-sm text-red-600 hover:underline"
-                            >
-                                Abandonner et voir la solution
-                            </button>
-
-                            <button
-                                v-if="enigme.pivot.solution_affichee || enigme.pivot.statut === 'resolue'"
-                                @click="passerSuivant"
-                                class="bg-gray-800 text-white text-sm px-5 py-2 rounded-md shadow hover:bg-gray-700 font-medium"
-                            >
-                                Passer à l'étape suivante →
-                            </button>
-
-                            <button
-                                v-else
+                                v-if="peutValiderGps"
                                 type="button"
                                 :disabled="gpsLoading"
                                 @click="validerPosition"
-                                class="gps-validate-btn bg-green-600 text-white text-sm px-5 py-2.5 rounded-md shadow font-semibold disabled:opacity-60"
+                                class="gps-validate-btn bg-green-600 text-white text-sm px-5 py-2.5 rounded-md shadow font-semibold disabled:opacity-60 transition"
                             >
                                 {{
                                     gpsLoading
@@ -290,11 +368,124 @@ onUnmounted(() => {
                                         : '📍 Valider ma position GPS'
                                 }}
                             </button>
+
+                            <button
+                                v-if="peutVoirSolution"
+                                type="button"
+                                @click="voirSolution"
+                                class="text-sm border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2.5 rounded-md font-medium transition"
+                            >
+                                Voir la solution (lieu)
+                            </button>
+
+                            <button
+                                v-if="peutPasserAutreEnigme"
+                                type="button"
+                                @click="passerAutreEnigme"
+                                class="text-sm border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 px-4 py-2.5 rounded-md font-medium transition"
+                            >
+                                Passer à une autre énigme →
+                            </button>
+
+                            <button
+                                v-if="peutPasserSuivant"
+                                type="button"
+                                @click="passerSuivant"
+                                class="bg-gray-800 text-white text-sm px-5 py-2.5 rounded-md shadow hover:bg-gray-700 font-medium transition"
+                            >
+                                Énigme suivante →
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div
+                    v-if="showModal && modalLieu"
+                    class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4"
+                    @click.self="fermerModal"
+                >
+                    <Transition
+                        enter-active-class="transition duration-200 ease-out"
+                        enter-from-class="opacity-0 scale-95"
+                        enter-to-class="opacity-100 scale-100"
+                        leave-active-class="transition duration-150 ease-in"
+                        leave-from-class="opacity-100 scale-100"
+                        leave-to-class="opacity-0 scale-95"
+                        appear
+                    >
+                        <div
+                            v-if="showModal && modalLieu"
+                            class="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl"
+                            role="dialog"
+                            aria-modal="true"
+                        >
+                            <div
+                                v-if="modalLieu.type === 'success'"
+                                class="text-center mb-4"
+                            >
+                                <div class="text-5xl mb-2">🎉</div>
+                                <h2 class="text-2xl font-black text-green-700">
+                                    Félicitations !
+                                </h2>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Vous avez trouvé le bon endroit.
+                                </p>
+                            </div>
+
+                            <div
+                                v-else
+                                class="text-center mb-4"
+                            >
+                                <div class="text-5xl mb-2">📍</div>
+                                <h2 class="text-2xl font-black text-gray-800">
+                                    Le lieu à découvrir
+                                </h2>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Énigme marquée comme non résolue.
+                                </p>
+                            </div>
+
+                            <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-5 space-y-2">
+                                <h3 class="text-lg font-bold text-gray-900">
+                                    {{ modalLieu.nom }}
+                                </h3>
+                                <p
+                                    v-if="modalLieu.description"
+                                    class="text-sm text-gray-600 leading-relaxed"
+                                >
+                                    {{ modalLieu.description }}
+                                </p>
+                                <p
+                                    v-else
+                                    class="text-sm text-gray-400 italic"
+                                >
+                                    Aucune description disponible pour ce lieu.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                @click="fermerModal"
+                                class="mt-6 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                            >
+                                Continuer
+                            </button>
+                        </div>
+                    </Transition>
+                </div>
+            </Transition>
+        </Teleport>
     </AuthenticatedLayout>
 </template>
 
@@ -317,7 +508,7 @@ onUnmounted(() => {
     animation: gps-blink 1.1s ease-in-out infinite;
 }
 
-.gps-validate-btn:hover {
+.gps-validate-btn:hover:not(:disabled) {
     background-color: #15803d;
 }
 </style>
