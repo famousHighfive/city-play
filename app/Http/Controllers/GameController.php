@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Game;
+use App\Models\Validation;
 use Illuminate\Http\Request;
 use App\Models\Enigme;
 use Inertia\Inertia;
@@ -13,23 +14,110 @@ use Illuminate\Validation\ValidationException;
 
 class GameController extends Controller
 {
-    public function configure(Environment $environment)
+    public function dashboard()
+    {
+        $user = auth()->user();
+
+        $environments = $user->isAdmin()
+            ? Environment::where('actif', true)->get()
+            : $user->environmentsAccessibles();
+
+        $gamesQuery = Game::where('user_id', $user->id)
+            ->when(! $user->isAdmin(), function ($query) use ($user) {
+                $query->whereIn(
+                    'environment_id',
+                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
+                );
+            })
+            ->with(['environment', 'enigmes'])
+            ->latest();
+
+        $games = $gamesQuery->get()->map(function (Game $game) {
+            $this->synchroniserStatutPartie($game);
+
+            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
+        });
+
+        $partiesReprendables = $games
+            ->filter(fn (array $partie) => $partie['peut_reprendre'])
+            ->keyBy('environment_id');
+
+        $environmentsAvecPartie = $environments->map(function ($env) use ($partiesReprendables, $games) {
+            $partie = $partiesReprendables->get($env->id);
+            $aUnePartieEnCours = $games->contains(
+                fn (array $g) => $g['environment_id'] === $env->id
+                    && in_array($g['statut'], ['en_cours', 'pause'], true)
+            );
+
+            return [
+                'id' => $env->id,
+                'nom' => $env->nom,
+                'description' => $env->description,
+                'peut_nouvelle_partie' => ! $aUnePartieEnCours,
+                'partie_active' => $partie ? [
+                    'id' => $partie['id'],
+                    'progression' => $partie['progression'],
+                    'etape_reprise' => $partie['etape_reprise'],
+                ] : null,
+            ];
+        });
+
+        $stats = [
+            'total_parties' => $games->count(),
+            'parties_en_cours' => $games->where('peut_reprendre', true)->count(),
+            'enigmes_resolues' => $games->sum('progression.resolues'),
+            'enigmes_total' => $games->sum('progression.total'),
+        ];
+
+        if ($stats['enigmes_total'] > 0) {
+            $stats['pourcentage_global'] = (int) round(
+                ($stats['enigmes_resolues'] / $stats['enigmes_total']) * 100
+            );
+        } else {
+            $stats['pourcentage_global'] = 0;
+        }
+
+        return Inertia::render('Dashboard', [
+            'environments' => $environmentsAvecPartie,
+            'games' => $games->values(),
+            'stats' => $stats,
+            'labels' => $this->dashboardLabels(),
+        ]);
+    }
+
+    public function configure(Request $request, Environment $environment)
     {
         $this->authorizePlayerEnvironment($environment);
 
         $existingGame = Game::where('user_id', auth()->id())
             ->where('environment_id', $environment->id)
             ->where('statut', 'en_cours')
+            ->with('enigmes')
             ->first();
+
+        $existingGameData = null;
+
+        if ($existingGame) {
+            $this->synchroniserStatutPartie($existingGame);
+            $existingGame->refresh()->load('enigmes');
+
+            if ($existingGame->statut === 'en_cours' && $this->peutReprendrePartie($existingGame)) {
+                $enigme = $this->trouverEnigmeCourante($existingGame, activer: false);
+                $existingGameData = [
+                    'id' => $existingGame->id,
+                    'etape_reprise' => $enigme?->pivot->ordre,
+                    'progression' => $this->calculerProgression($existingGame),
+                ];
+            }
+        }
 
         return Inertia::render('Game/ConfigureGame', [
             'environment' => $environment,
             'gameOptions' => $this->gameOptions($environment),
-            'existingGame' => $existingGame,
+            'existingGame' => $existingGameData,
+            'afficher_modal_mode' => $request->boolean('nouvelle'),
         ]);
     }
-
-
     public function startNewGame(Request $request, Environment $environment)
     {
         $this->authorizePlayerEnvironment($environment);
@@ -74,8 +162,8 @@ class GameController extends Controller
             ->where('statut', 'en_cours')
             ->first();
 
-        if ($existingGame) {
-            return to_route('game.show', $existingGame->id);
+        if ($existingGame && $this->peutReprendrePartie($existingGame)) {
+            return to_route('game.resume', $existingGame->id);
         }
 
         $game = Game::create([
@@ -142,60 +230,170 @@ class GameController extends Controller
         return to_route('game.show', $game->id);
     }
 
+    public function resume(Game $game)
+    {
+        return $this->showEnigme($game);
+    }
+
     public function showEnigme(Game $game)
     {
-        abort_unless($game->user_id === auth()->id(), 403);
+        $this->ensureGameOwner($game);
 
-        $game->load('environment');
-
-        $currentEnigme = $game->enigmes()
-            ->with('place')
-            ->wherePivot('statut', 'en_cours')
-            ->first();
-
-        if (!$currentEnigme) {
-            return to_route('dashboard')->with('message', 'Aucune énigme en cours ou partie terminée !');
+        if ($game->statut === 'terminee') {
+            return redirect()
+                ->to(route('game.configure', $game->environment_id).'?nouvelle=1')
+                ->with('info', 'Cette partie est terminée. Vous pouvez en lancer une nouvelle.');
         }
 
-        $totalEnigmes = $game->enigmes()->count();
+        return $this->renderPlayEnigme(
+            $game,
+            modalLieu: session('modal_lieu'),
+            gpsError: session('gps_error'),
+        );
+    }
 
-        return Inertia::render('Game/PlayEnigme', [
-            'game' => $game,
-            'enigme' => $currentEnigme,
-            'progression' => [
-                'etape' => $currentEnigme->pivot->ordre,
-                'total' => $totalEnigmes,
-            ],
-            'labels' => $this->gameLabels(),
-        ]);
+    public function pauseGame(Game $game)
+    {
+        $this->ensureGameOwner($game);
+        abort_unless($game->statut === 'en_cours', 403);
+
+        $game->update(['statut' => 'pause']);
+
+        return redirect()
+            ->route('dashboard')
+            ->with('success', 'Partie mise en pause. Vous pouvez la reprendre depuis le tableau de bord.');
     }
 
     public function requestIndice(Game $game, Enigme $enigme)
     {
+        $this->ensureGameOwner($game);
+
         $pivot = $game->enigmes()->findOrFail($enigme->id)->pivot;
 
         if ($pivot->nb_indices_demandes < 2) {
             $game->enigmes()->updateExistingPivot($enigme->id, [
-                'nb_indices_demandes' => $pivot->nb_indices_demandes + 1
+                'nb_indices_demandes' => $pivot->nb_indices_demandes + 1,
             ]);
         }
 
-        return back();
+        return $this->redirectToPlayEnigme($game);
     }
 
     public function revealSolution(Game $game, Enigme $enigme)
     {
-        $game->enigmes()->updateExistingPivot($enigme->id, [
-            'solution_affichee' => true,
-            'statut' => 'non_resolue'
+        $this->ensureGameOwner($game);
+
+        $enigmeLiee = $game->enigmes()->with('place')->where('enigmes.id', $enigme->id)->first();
+
+        abort_unless($enigmeLiee !== null, 404);
+
+        $pivot = $enigmeLiee->pivot;
+
+        if ($pivot->statut === 'non_resolue' && $pivot->solution_affichee) {
+            return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigmeLiee));
+        }
+
+        if ($pivot->statut === 'en_cours') {
+            $game->enigmes()->updateExistingPivot($enigmeLiee->id, [
+                'solution_affichee' => true,
+                'statut' => 'non_resolue',
+            ]);
+
+            return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigmeLiee));
+        }
+
+        $enigmeActive = $this->enigmeEnCours($game);
+
+        if ($enigmeActive) {
+            $game->enigmes()->updateExistingPivot($enigmeActive->id, [
+                'solution_affichee' => true,
+                'statut' => 'non_resolue',
+            ]);
+
+            return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigmeActive));
+        }
+
+        return redirect()
+            ->route('game.show', $game)
+            ->with('error', 'Aucune énigme en cours pour afficher la solution.');
+    }
+
+    /**
+     * Valide la position GPS du joueur par rapport au lieu de l'énigme.
+     */
+    public function validerPosition(Request $request, Game $game, Enigme $enigme)
+    {
+        $this->ensureGameOwner($game);
+
+        $enigmeLiee = $game->enigmes()->with('place')->where('enigmes.id', $enigme->id)->first()
+            ?? $this->enigmeEnCours($game);
+
+        abort_unless($enigmeLiee !== null, 404);
+
+        $enigme = $enigmeLiee;
+        $pivot = $enigme->pivot;
+
+        if ($pivot->statut === 'resolue') {
+            return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigme, 'success'));
+        }
+
+        abort_unless($pivot->statut === 'en_cours', 403, 'Cette énigme n\'est plus en cours de résolution.');
+
+        $data = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
         ]);
 
-        return back();
+        $place = $enigme->place;
+        $distance = $this->distanceMetres(
+            (float) $data['latitude'],
+            (float) $data['longitude'],
+            (float) $place->latitude,
+            (float) $place->longitude,
+        );
+
+        $rayon = (float) ($place->rayon_validation ?? 30);
+
+        if ($distance > $rayon) {
+            return $this->redirectToPlayEnigme(
+                $game,
+                gpsError: sprintf(
+                    'Vous êtes à %d m du lieu (rayon autorisé : %d m). Rapprochez-vous.',
+                    (int) round($distance),
+                    (int) $rayon,
+                ),
+            );
+        }
+
+        $game->enigmes()->updateExistingPivot($enigme->id, [
+            'statut' => 'resolue',
+            'date_resolution' => now(),
+        ]);
+
+        Validation::create([
+            'game_id' => $game->id,
+            'place_id' => $place->id,
+            'latitude' => $data['latitude'],
+            'longitude' => $data['longitude'],
+            'distance_metres' => round($distance, 2),
+            'bonne_reponse' => true,
+            'date_validation' => now(),
+        ]);
+
+        return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigme, 'success'));
     }
 
     public function skipEnigme(Game $game, Enigme $enigme)
     {
-        $currentPivot = $game->enigmes()->findOrFail($enigme->id)->pivot;
+        $this->ensureGameOwner($game);
+
+        $enigmeLiee = $game->enigmes()->where('enigmes.id', $enigme->id)->first()
+            ?? $this->trouverEnigmeCourante($game, activer: false);
+
+        abort_unless($enigmeLiee !== null, 404);
+
+        $enigme = $enigmeLiee;
+        $currentPivot = $enigme->pivot;
 
         if ($currentPivot->statut === 'en_cours') {
             $game->enigmes()->updateExistingPivot($enigme->id, ['statut' => 'passee']);
@@ -207,8 +405,14 @@ class GameController extends Controller
 
         if ($nextEnigme) {
             $game->enigmes()->updateExistingPivot($nextEnigme->id, ['statut' => 'en_cours']);
-            return back()->with('success', 'Énigme suivante débloquée !');
+
+            return $this->redirectToPlayEnigme($game);
         }
+
+        $game->update([
+            'statut' => 'terminee',
+            'date_fin' => now(),
+        ]);
 
         return to_route('dashboard')->with('success', 'Félicitations, vous avez terminé l\'environnement !');
     }
@@ -269,6 +473,253 @@ class GameController extends Controller
         ];
     }
 
+    private function formaterPartiePourDashboard(Game $game): array
+    {
+        $progression = $this->calculerProgression($game);
+        $enigmeReprise = $this->trouverEnigmeCourante($game, activer: false);
+
+        return [
+            'id' => $game->id,
+            'environment_id' => $game->environment_id,
+            'statut' => $game->statut,
+            'mode_jeu' => $game->mode_jeu,
+            'nb_membres' => $game->nb_membres,
+            'duree_prevue' => $game->duree_prevue,
+            'duree_restante' => $game->duree_restante,
+            'moyen_locomotion' => $game->moyen_locomotion,
+            'niveau_difficulte' => $game->niveau_difficulte,
+            'date_debut' => $game->date_debut,
+            'date_fin' => $game->date_fin,
+            'environment' => $game->environment,
+            'progression' => $progression,
+            'peut_reprendre' => $this->peutReprendrePartie($game),
+            'etape_reprise' => $enigmeReprise?->pivot->ordre,
+        ];
+    }
+
+    private function calculerProgression(Game $game): array
+    {
+        $enigmes = $game->enigmes;
+        $total = $enigmes->count();
+
+        $resolues = $enigmes->where('pivot.statut', 'resolue')->count();
+        $nonResolues = $enigmes->where('pivot.statut', 'non_resolue')->count();
+        $passees = $enigmes->where('pivot.statut', 'passee')->count();
+        $aFaire = $enigmes->where('pivot.statut', 'a_faire')->count();
+        $enigmeEnCours = $enigmes->firstWhere('pivot.statut', 'en_cours');
+        $enigmeReprise = $this->trouverEnigmeCourante($game, activer: false);
+
+        return [
+            'total' => $total,
+            'resolues' => $resolues,
+            'non_resolues' => $nonResolues,
+            'passees' => $passees,
+            'a_faire' => $aFaire,
+            'etape_actuelle' => $enigmeReprise?->pivot->ordre ?? $enigmeEnCours?->pivot->ordre,
+            'pourcentage_resolues' => $total > 0 ? (int) round(($resolues / $total) * 100) : 0,
+            'pourcentage_avancement' => $total > 0
+                ? (int) round((($resolues + $nonResolues + $passees) / $total) * 100)
+                : 0,
+            'terminee' => $game->statut === 'terminee',
+        ];
+    }
+
+    private function peutReprendrePartie(Game $game): bool
+    {
+        return in_array($game->statut, ['en_cours', 'pause'], true)
+            && $this->trouverEnigmeCourante($game, activer: false) !== null;
+    }
+
+    /**
+     * Affiche la page de jeu avec l'énigme courante.
+     */
+    private function renderPlayEnigme(Game $game, ?array $modalLieu = null, ?string $gpsError = null)
+    {
+        $game->load('environment');
+
+        if ($game->statut === 'pause') {
+            $game->update(['statut' => 'en_cours']);
+            $game->refresh();
+        }
+
+        if ($game->statut === 'terminee') {
+            return redirect()
+                ->to(route('game.configure', $game->environment_id).'?nouvelle=1')
+                ->with('info', 'Cette partie est terminée. Vous pouvez en lancer une nouvelle.');
+        }
+
+        $currentEnigme = $this->trouverEnigmeCourante($game, activer: true);
+
+        if (! $currentEnigme && $modalLieu !== null) {
+            $currentEnigme = $game->enigmes()
+                ->with('place')
+                ->wherePivotIn('statut', ['resolue', 'non_resolue'])
+                ->orderByPivot('ordre', 'desc')
+                ->first();
+        }
+
+        if (! $currentEnigme) {
+            return redirect()
+                ->route('dashboard')
+                ->with('error', 'Impossible de reprendre cette partie. Commencez-en une nouvelle.');
+        }
+
+        $totalEnigmes = $game->enigmes()->count();
+
+        return Inertia::render('Game/PlayEnigme', [
+            'game' => $game,
+            'enigme' => $currentEnigme->load('place'),
+            'progression' => [
+                'etape' => $currentEnigme->pivot->ordre,
+                'total' => $totalEnigmes,
+            ],
+            'labels' => $this->gameLabels(),
+            'modal_lieu' => $modalLieu,
+            'gps_error' => $gpsError,
+        ]);
+    }
+
+    /**
+     * Trouve l'énigme où le joueur doit reprendre (sans révéler le lieu).
+     */
+    private function trouverEnigmeCourante(Game $game, bool $activer = false): ?Enigme
+    {
+        if (! in_array($game->statut, ['en_cours', 'pause'], true)) {
+            return null;
+        }
+
+        $enigme = $game->enigmes()
+            ->with('place')
+            ->wherePivot('statut', 'en_cours')
+            ->orderByPivot('ordre')
+            ->first();
+
+        if ($enigme) {
+            return $enigme;
+        }
+
+        // Dernière énigme validée ou solution vue (y compris la dernière de la partie)
+        $enigme = $game->enigmes()
+            ->with('place')
+            ->wherePivotIn('statut', ['resolue', 'non_resolue'])
+            ->orderByPivot('ordre', 'desc')
+            ->first();
+
+        if ($enigme) {
+            return $enigme;
+        }
+
+        if (! $activer) {
+            return null;
+        }
+
+        $enigme = $game->enigmes()
+            ->with('place')
+            ->wherePivot('statut', 'a_faire')
+            ->orderByPivot('ordre')
+            ->first();
+
+        if ($enigme) {
+            $game->enigmes()->updateExistingPivot($enigme->id, ['statut' => 'en_cours']);
+
+            return $game->enigmes()
+                ->with('place')
+                ->where('enigmes.id', $enigme->id)
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function ensureGameOwner(Game $game): void
+    {
+        abort_unless((int) $game->user_id === (int) auth()->id(), 403);
+    }
+
+    private function enigmeEnCours(Game $game): ?Enigme
+    {
+        return $game->enigmes()
+            ->with('place')
+            ->wherePivot('statut', 'en_cours')
+            ->orderByPivot('ordre')
+            ->first();
+    }
+
+    private function modalLieuDonnees(Enigme $enigme, string $type = 'solution'): array
+    {
+        return [
+            'type' => $type,
+            'nom' => $enigme->place->nom,
+            'description' => $enigme->place->description,
+        ];
+    }
+
+    /**
+     * Redirige vers la page de jeu (URL stable) en conservant les données flash pour les modales.
+     */
+    private function redirectToPlayEnigme(Game $game, ?array $modalLieu = null, ?string $gpsError = null)
+    {
+        $redirect = redirect()->route('game.show', $game);
+
+        if ($modalLieu !== null) {
+            $redirect->with('modal_lieu', $modalLieu);
+        }
+
+        if ($gpsError !== null) {
+            $redirect->with('gps_error', $gpsError);
+        }
+
+        return $redirect;
+    }
+
+    /**
+     * Marque la partie terminée uniquement quand il ne reste plus d'énigmes jouables.
+     * La fin effective est gérée par skipEnigme ; ici on corrige l'affichage dashboard.
+     */
+    private function synchroniserStatutPartie(Game $game): void
+    {
+        if ($game->statut !== 'en_cours') {
+            return;
+        }
+
+        if ($game->enigmes()->count() === 0) {
+            return;
+        }
+
+        $resteAJouer = $game->enigmes()
+            ->wherePivotIn('statut', ['a_faire', 'en_cours'])
+            ->count();
+
+        if ($resteAJouer > 0) {
+            return;
+        }
+
+        $game->update([
+            'statut' => 'terminee',
+            'date_fin' => $game->date_fin ?? now(),
+        ]);
+    }
+
+    private function dashboardLabels(): array
+    {
+        return [
+            ...$this->gameLabels(),
+            'statuts_partie' => [
+                'en_cours' => 'En cours',
+                'terminee' => 'Terminée',
+                'pause' => 'En pause',
+                'abandonnee' => 'Abandonnée',
+            ],
+            'statuts_enigme' => [
+                'resolues' => 'Résolues',
+                'non_resolues' => 'Non résolues',
+                'passees' => 'Passées',
+                'a_faire' => 'À faire',
+                'en_cours' => 'En cours',
+            ],
+        ];
+    }
+
     private function gameLabels(): array
     {
         return [
@@ -290,7 +741,63 @@ class GameController extends Controller
         ];
     }
 
-    public function validatePosition(Request $request, Game $game
+    // public function validatePosition(Request $request, Game $game
+    /**
+     * Nombre d'énigmes selon durée et locomotion (instructions projet).
+     */
+    private function nombreEnigmesPourPartie(string $moyenLocomotion, int $dureePrevue): int
+    {
+        $minutesParEnigme = match ($moyenLocomotion) {
+            'pied' => 20,
+            'velo' => 15,
+            'voiture' => 10,
+            default => 20,
+        };
+
+        return max(1, (int) floor($dureePrevue / $minutesParEnigme));
+    }
+
+    /**
+     * Données énigme envoyées au joueur (sans révéler le lieu).
+     */
+    private function enigmePourJoueur(Enigme $enigme): array
+    {
+        return [
+            'id' => $enigme->id,
+            'texte' => $enigme->texte,
+            'image' => $enigme->image,
+            'indice_1' => $enigme->indice_1,
+            'indice_2' => $enigme->indice_2,
+            'pivot' => $enigme->pivot,
+            'lieu_validation' => [
+                'latitude' => $enigme->place->latitude,
+                'longitude' => $enigme->place->longitude,
+                'rayon_validation' => $enigme->place->rayon_validation ?? 30,
+            ],
+        ];
+    }
+
+    private function distanceMetres(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
+        $earthRadius = 6371000;
+        $latFrom = deg2rad($lat1);
+        $lonFrom = deg2rad($lon1);
+        $latTo = deg2rad($lat2);
+        $lonTo = deg2rad($lon2);
+        $latDelta = $latTo - $latFrom;
+        $lonDelta = $lonTo - $lonFrom;
+        $a = sin($latDelta / 2) ** 2
+            + cos($latFrom) * cos($latTo) * sin($lonDelta / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
+    }
+
+    private function selectionnerEnigmes(
+        Environment $environment,
+        string $niveauDifficulte,
+        string $moyenLocomotion,
+        int $dureePrevue,
     ) {
 
         $request->validate([

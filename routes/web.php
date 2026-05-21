@@ -21,7 +21,7 @@ use App\Http\Controllers\EnvironmentController;
 /*
 |--------------------------------------------------------------------------
 | PAGE PUBLIQUE
-|--------------------------------------------------------------------------
+|------------------------- -------------------------------------------------
 */
 
 Route::get('/', function () {
@@ -40,30 +40,7 @@ Route::get('/', function () {
 */
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/dashboard', function () {
-        $user = auth()->user();
-
-        // Joueur : uniquement les villes liées à ses invitations acceptées
-        $environments = $user->isAdmin()
-            ? \App\Models\Environment::where('actif', true)->get()
-            : $user->environmentsAccessibles();
-
-        $games = \App\Models\Game::where('user_id', $user->id)
-            ->when(! $user->isAdmin(), function ($query) use ($user) {
-                $query->whereIn(
-                    'environment_id',
-                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
-                );
-            })
-            ->with('environment')
-            ->latest()
-            ->get();
-
-        return Inertia::render('Dashboard', [
-            'environments' => $environments,
-            'games' => $games,
-        ]);
-    })->name('dashboard');
+    Route::get('/dashboard', [GameController::class, 'dashboard'])->name('dashboard');
 });
 
 /*
@@ -105,12 +82,15 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
 |--------------------------------------------------------------------------
 */
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
     Route::get('/environments/{environment}/configure', [GameController::class, 'configure'])
         ->name('game.configure');
 
     Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
         ->name('game.start');
+
+    Route::get('/game/{game}/resume', [GameController::class, 'resume'])
+        ->name('game.resume');
 
     Route::get('/game/{game}', [GameController::class, 'showEnigme'])
         ->name('game.show');
@@ -121,6 +101,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/game/{game}/enigme/{enigme}/solution', [GameController::class, 'revealSolution'])
         ->name('game.solution');
 
+    Route::post('/game/{game}/enigme/{enigme}/valider-position', [GameController::class, 'validerPosition'])
+        ->name('game.valider');
+
     Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])
         ->name('game.skip');
 
@@ -128,6 +111,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     GameController::class,
     'validatePosition'
 ])->name('game.validate.position');
+    Route::post('/game/{game}/pause', [GameController::class, 'pauseGame'])
+        ->name('game.pause');
 });
 
 /*

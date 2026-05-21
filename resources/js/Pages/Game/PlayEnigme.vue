@@ -1,725 +1,534 @@
 <script setup>
+/**
+ * Composant de jeu pour une énigme spécifique.
+ * Gère l'affichage de l'énigme, le chronomètre, la carte GPS et les interactions.
+ */
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import L from 'leaflet';
 
-
+// Props reçus du contrôleur Laravel
 const props = defineProps({
-    game: Object,
-    enigme: Object,
-    progression: Object,
-    labels: Object,
+    game: Object,         // Données de la partie en cours
+    enigme: Object,       // Détails de l'énigme actuelle
+    progression: Object,  // État de progression (étape x/y)
+    labels: Object,       // Libellés pour les énumérations (difficulté, mode, etc.)
+    modal_lieu: {         // Données pour afficher la modal du lieu (solution/validation)
+        type: Object,
+        default: null,
+    },
+    gps_error: {          // Erreur GPS éventuelle passée par le flash
+        type: String,
+        default: null,
+    },
 });
 
+// --- ÉTAT RÉACTIF ---
 const mapContainer = ref(null);
-
 const mapInstance = ref(null);
-
 const playerMarker = ref(null);
-
-const validationMessage = ref(null);
-
-const validationOk = ref(false);
-
-const gpsLoading = ref(false);
-
-const chrono = ref('00:00');
-
 let targetMarker = null;
-
 let radiusCircle = null;
 
+const gpsLoading = ref(false);
+const gpsError = ref(props.gps_error);
+const showModal = ref(false);
+const modalLieu = ref(null);
 let timerInterval = null;
 
-/*
-|--------------------------------------------------------------------------
-| COORDONNEES DU LIEU
-|--------------------------------------------------------------------------
-*/
+const defaultMapCenter = [6.370293, 2.391236]; // Centre par défaut (Cotonou)
 
-const cibleLat = computed(() =>
-    Number(props.enigme.place.latitude)
+// --- CHRONOMÈTRE ---
+// Initialisation du temps restant en secondes
+const remainingSeconds = ref(
+    Math.max(0, Number(props.game.duree_restante ?? props.game.duree_prevue) * 60)
 );
 
-const cibleLng = computed(() =>
-    Number(props.enigme.place.longitude)
-);
+// Formatage du temps pour l'affichage (ex: "15 min 04s")
+const timerDisplay = computed(() => {
+    const minutes = Math.floor(remainingSeconds.value / 60);
+    const seconds = remainingSeconds.value % 60;
+    return `${minutes} min ${seconds.toString().padStart(2, '0')}s`;
+});
 
-const rayon = computed(() =>
-    Number(props.enigme.place.rayon_validation ?? 30)
-);
+/**
+ * Lance le décompte du temps restant.
+ */
+const lancerChrono = () => {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+        if (remainingSeconds.value <= 0) {
+            clearInterval(timerInterval);
+            return;
+        }
+        remainingSeconds.value -= 1;
+    }, 1000);
+};
 
+// --- CALCULS ET LIBELLÉS ---
+// Récupération des libellés lisibles pour l'UI
 const locomotionLabel = computed(() =>
-    props.labels.moyens_locomotion[
-        props.game.moyen_locomotion
-    ] ?? props.game.moyen_locomotion
+    props.labels?.moyens_locomotion?.[props.game.moyen_locomotion] ?? props.game.moyen_locomotion
 );
 
 const difficulteLabel = computed(() =>
-    props.labels.niveaux_difficulte[
-        props.game.niveau_difficulte
-    ] ?? props.game.niveau_difficulte
+    props.labels?.niveaux_difficulte?.[props.game.niveau_difficulte] ?? props.game.niveau_difficulte
 );
 
 const modeLabel = computed(() =>
-    props.labels.modes[
-        props.game.mode_jeu
-    ] ?? props.game.mode_jeu
+    props.labels?.modes?.[props.game.mode_jeu] ?? props.game.mode_jeu
 );
 
-const lancerChrono = () => {
+// Coordonnées et rayon de validation (on utilise 'place' ou 'lieu_validation' selon la structure)
+const lieuValidation = computed(() => props.enigme.place || props.enigme.lieu_validation);
+const cibleLat = computed(() => Number(lieuValidation.value?.latitude ?? 0));
+const cibleLng = computed(() => Number(lieuValidation.value?.longitude ?? 0));
+const rayon = computed(() => Number(lieuValidation.value?.rayon_validation ?? 30));
 
-    timerInterval = setInterval(() => {
+// --- LOGIQUE D'AFFICHAGE (MODALES & FLASH) ---
+const page = usePage();
 
-        const debut = new Date(props.game.date_debut);
-
-        const maintenant = new Date();
-
-        const difference =
-            Math.floor((maintenant - debut) / 1000);
-
-        const minutes =
-            Math.floor(difference / 60);
-
-        const secondes =
-            difference % 60;
-
-        chrono.value =
-            `${String(minutes).padStart(2, '0')}:${String(secondes).padStart(2, '0')}`;
-
-    }, 1000);
-
+/**
+ * Ouvre la modal d'information sur un lieu.
+ */
+const ouvrirModal = async (data) => {
+    if (!data?.nom) return;
+    modalLieu.value = data;
+    await nextTick();
+    showModal.value = true;
 };
 
-/*
-|--------------------------------------------------------------------------
-| INITIALISATION CARTE
-|--------------------------------------------------------------------------
-*/
-
-const initMap = () => {
-
-    if (!mapContainer.value || mapInstance.value) {
-
-        return;
-    }
-
-    mapInstance.value = L.map(
-        mapContainer.value
-    ).setView(
-        [cibleLat.value, cibleLng.value],
-        16
-    );
-
-    L.tileLayer(
-        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        {
-            attribution:
-                '&copy; OpenStreetMap contributors',
-        }
-    ).addTo(mapInstance.value);
-
-
-    targetMarker = L.circleMarker(
-        [cibleLat.value, cibleLng.value],
-        {
-            radius: 10,
-            color: '#ef4444',
-            fillColor: '#ef4444',
-            fillOpacity: 1,
-            weight: 3,
-        }
-    )
-        .addTo(mapInstance.value)
-        .bindPopup(props.enigme.place.nom);
-
-
-    radiusCircle = L.circle(
-        [cibleLat.value, cibleLng.value],
-        {
-            radius: rayon.value,
-            color: '#22c55e',
-            fillColor: '#22c55e',
-            fillOpacity: 0.15,
-            weight: 2,
-        }
-    ).addTo(mapInstance.value);
-
+const fermerModal = () => {
+    showModal.value = false;
 };
 
-/*
-|--------------------------------------------------------------------------
-| AFFICHER POSITION JOUEUR
-|--------------------------------------------------------------------------
-*/
+// Surveillance des données flash pour ouvrir automatiquement les modales
+watch(
+    () => props.modal_lieu || page.props.flash?.modal_lieu,
+    (data) => { if (data) ouvrirModal(data); },
+    { immediate: true, deep: true }
+);
 
-const afficherPositionJoueur = (
-    lat,
-    lng
-) => {
+watch(
+    () => props.gps_error ?? page.props.flash?.gps_error,
+    (msg) => { gpsError.value = msg ?? null; },
+    { immediate: true }
+);
 
+// --- ACTIONS DU JEU ---
+const routeParams = () => ({
+    game: props.game.id,
+    enigme: props.enigme.id,
+});
 
-    if (playerMarker.value) {
-
-        mapInstance.value.removeLayer(
-            playerMarker.value
-        );
-    }
-
-
-    playerMarker.value = L.circleMarker(
-        [lat, lng],
-        {
-            radius: 10,
-            color: '#2563eb',
-            fillColor: '#3b82f6',
-            fillOpacity: 1,
-            weight: 3,
-        }
-    )
-        .addTo(mapInstance.value)
-        .bindPopup('Votre position');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Zoom automatique
-    |--------------------------------------------------------------------------
-    */
-
-    const bounds = L.latLngBounds([
-        [cibleLat.value, cibleLng.value],
-        [lat, lng],
-    ]);
-
-    mapInstance.value.fitBounds(
-        bounds.pad(0.30)
-    );
-
-};
-
+/**
+ * Valide la position GPS actuelle.
+ */
 const validerPosition = () => {
-
     if (!navigator.geolocation) {
-
-        alert('GPS indisponible');
-
+        alert('La géolocalisation n\'est pas supportée par votre navigateur.');
         return;
     }
 
     gpsLoading.value = true;
-
-    validationMessage.value = null;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Capture GPS
-    |--------------------------------------------------------------------------
-    */
+    gpsError.value = null;
 
     navigator.geolocation.getCurrentPosition(
-
         (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
 
-            const latitude =
-                position.coords.latitude;
+            // Mise à jour visuelle immédiate sur la carte
+            afficherPositionJoueur(lat, lng);
 
-            const longitude =
-                position.coords.longitude;
-
-            /*
-            |--------------------------------------------------------------------------
-            | Affiche joueur sur carte
-            |--------------------------------------------------------------------------
-            */
-
-            afficherPositionJoueur(
-                latitude,
-                longitude
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | Appel backend Laravel
-            |--------------------------------------------------------------------------
-            */
-
+            // Envoi au backend pour validation métier
             router.post(
-
-                route(
-                    'game.validate.position',
-                    props.game.id
-                ),
-
+                route('game.valider', routeParams()),
+                { latitude: lat, longitude: lng },
                 {
-                    latitude,
-                    longitude,
-
-                    enigme_id:
-                        props.enigme.id,
-                },
-
-                {
-
                     preserveScroll: true,
-
-                    onSuccess: (page) => {
-                        validationOk.value = true;
-
-                        validationMessage.value =
-                            'Position validée avec succès 🎉';
-                    },
-
-                    onError: () => {
-
-                        validationOk.value = false;
-
-                        validationMessage.value =
-                            'Vous êtes encore trop loin du lieu.';
-                    },
-
-                    onFinish: () => {
-
-                        gpsLoading.value = false;
-                    }
-
+                    onFinish: () => { gpsLoading.value = false; },
                 }
-
             );
-
         },
-
         () => {
-
             gpsLoading.value = false;
-
-            alert(
-                'Impossible de récupérer votre position.'
-            );
-
+            gpsError.value = "Impossible d'accéder à votre position GPS.";
         },
-
-        {
-            enableHighAccuracy: true,
-            timeout: 15000,
-        }
-
+        { enableHighAccuracy: true, timeout: 15000 }
     );
-
 };
 
-
+/**
+ * Demande un indice.
+ */
 const demanderIndice = () => {
-
-    router.post(
-        route(
-            'game.indice',
-            [
-                props.game.id,
-                props.enigme.id
-            ]
-        )
-    );
-
+    router.post(route('game.indice', routeParams()), {}, { preserveScroll: true });
 };
 
-
+/**
+ * Révèle la solution de l'énigme.
+ */
 const voirSolution = () => {
-
-    if (
-        confirm(
-            'Voir la solution ?'
-        )
-    ) {
-
-        router.post(
-            route(
-                'game.solution',
-                [
-                    props.game.id,
-                    props.enigme.id
-                ]
-            )
-        );
-
+    if (!confirm('Voulez-vous vraiment voir la solution ? Cela marquera l\'énigme comme non résolue.')) {
+        return;
     }
-
+    router.post(route('game.solution', routeParams()));
 };
 
+/**
+ * Passe à l'énigme suivante (si résolue ou abandonnée).
+ */
 const passerSuivant = () => {
-
-    router.post(
-        route(
-            'game.skip',
-            [
-                props.game.id,
-                props.enigme.id
-            ]
-        )
-    );
-
+    router.post(route('game.skip', routeParams()));
 };
 
+/**
+ * Permet de passer à une autre énigme disponible.
+ */
+const passerAutreEnigme = () => {
+    if (!confirm('Passer à une autre énigme ?')) return;
+    router.post(route('game.skip', routeParams()));
+};
 
+/**
+ * Met la partie en pause et retourne au dashboard.
+ */
+const mettreEnPause = () => {
+    if (!confirm('Mettre la partie en pause ?')) return;
+    router.post(route('game.pause', props.game.id), {}, {
+        onSuccess: () => router.visit(route('dashboard'))
+    });
+};
 
+const retourDashboard = () => {
+    router.visit(route('dashboard'));
+};
+
+// --- LOGIQUE CARTE (LEAFLET) ---
+const initMap = (lat, lng) => {
+    if (!mapContainer.value) return;
+    if (mapInstance.value) mapInstance.value.remove();
+
+    mapInstance.value = L.map(mapContainer.value, { zoomControl: false })
+        .setView([lat, lng], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(mapInstance.value);
+};
+
+const renderTarget = () => {
+    if (!mapInstance.value || !cibleLat.value) return;
+
+    if (targetMarker) targetMarker.remove();
+    if (radiusCircle) radiusCircle.remove();
+
+    targetMarker = L.circleMarker([cibleLat.value, cibleLng.value], {
+        radius: 8, color: '#4f46e5', fillColor: '#4f46e5', fillOpacity: 1, weight: 2
+    }).addTo(mapInstance.value);
+
+    radiusCircle = L.circle([cibleLat.value, cibleLng.value], {
+        radius: rayon.value, color: '#4f46e5', fillColor: '#4f46e5', fillOpacity: 0.1, weight: 1
+    }).addTo(mapInstance.value);
+};
+
+const afficherPositionJoueur = (lat, lng) => {
+    if (!mapInstance.value) initMap(lat, lng);
+    if (playerMarker.value) playerMarker.value.remove();
+
+    playerMarker.value = L.circleMarker([lat, lng], {
+        radius: 10, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, weight: 3
+    }).addTo(mapInstance.value).bindPopup('Vous êtes ici');
+
+    mapInstance.value.setView([lat, lng], 16);
+};
+
+// --- CYCLE DE VIE ---
 onMounted(() => {
-
-    initMap();
-
+    initMap(cibleLat.value || defaultMapCenter[0], cibleLng.value || defaultMapCenter[1]);
+    renderTarget();
     lancerChrono();
-
 });
-
 
 onUnmounted(() => {
-
-    /*
-    |--------------------------------------------------------------------------
-    | Nettoyage map
-    |--------------------------------------------------------------------------
-    */
-
-    if (mapInstance.value) {
-
-        mapInstance.value.remove();
-
-        mapInstance.value = null;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Stop chrono
-    |--------------------------------------------------------------------------
-    */
-
-    if (timerInterval) {
-
-        clearInterval(timerInterval);
-    }
-
+    if (mapInstance.value) mapInstance.value.remove();
+    if (timerInterval) clearInterval(timerInterval);
 });
+
+// --- PERMISSIONS UI ---
+const peutValiderGps = computed(() => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee);
+const peutVoirSolution = computed(() => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee);
+const peutPasserAutreEnigme = computed(() => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee);
+const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours' || props.enigme.pivot.solution_affichee);
+const partieEnPausePossible = computed(() => props.game.statut === 'en_cours');
+
 </script>
 
 <template>
-
-    <Head :title="`Partie - ${game.environment?.nom}`" />
+    <Head :title="`Partie - ${game.environment?.nom ?? 'City Play'}`" />
 
     <AuthenticatedLayout>
+        <div class="py-12 bg-gray-100 min-h-screen">
+            <div class="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 space-y-4">
 
-        <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
-
-            <!-- HEADER -->
-            <div class="sticky top-0 z-30 backdrop-blur-xl bg-black/30 border-b border-white/10">
-
-                <div class="max-w-7xl mx-auto px-4 py-4">
-
-                    <div class="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-
-                        <!-- TITRE -->
-                        <div>
-
-                            <p class="text-indigo-400 text-xs uppercase tracking-[0.3em] font-bold">
-                                City Play
-                            </p>
-
-                            <h1 class="text-2xl md:text-3xl font-black mt-1">
-                                {{ enigme.place.nom }}
-                            </h1>
-
-                            <p class="text-sm text-slate-300 mt-2">
-                                Étape {{ progression.etape }}
-                                / {{ progression.total }}
-                            </p>
-
-                        </div>
-
-                        <!-- STATS -->
-                        <div class="flex flex-wrap gap-3">
-
-                            <div class="glass-card">
-                                🎮 {{ modeLabel }}
-                            </div>
-
-                            <div class="glass-card">
-                                🧠 {{ difficulteLabel }}
-                            </div>
-
-                            <div class="glass-card">
-                                🚶 {{ locomotionLabel }}
-                            </div>
-
-                            <div class="glass-card chrono-card">
-                                ⏱️ {{ chrono }}
-                            </div>
-
-                        </div>
-
-                    </div>
-
+                <!-- Infos barre supérieure -->
+                <div class="bg-white rounded-lg shadow px-4 py-3 flex flex-wrap gap-3 text-xs text-gray-600">
+                    <span class="font-semibold text-gray-800">{{ modeLabel }}</span>
+                    <span>· {{ difficulteLabel }}</span>
+                    <span>· {{ locomotionLabel }}</span>
+                    <span class="text-indigo-600 font-bold">· {{ timerDisplay }} restants</span>
+                    <span v-if="game.mode_jeu === 'equipe'">· {{ game.nb_membres }} membres</span>
                 </div>
 
-            </div>
-
-            <!-- CONTENT -->
-            <div class="max-w-7xl mx-auto px-4 py-8">
-
-                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-                    <!-- COLONNE ENIGME -->
-                    <div class="xl:col-span-2 space-y-6">
-
-                        <!-- IMAGE -->
-                        <div
-                            v-if="enigme.image"
-                            class="overflow-hidden rounded-3xl border border-white/10 shadow-2xl"
-                        >
-
-                            <img
-                                :src="'/storage/' + enigme.image"
-                                class="w-full h-[300px] object-cover"
-                            />
-
+                <!-- En-tête de l'énigme avec boutons d'action -->
+                <div class="bg-indigo-600 text-white p-4 rounded-t-lg shadow">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <p class="text-xs uppercase tracking-wider font-semibold opacity-75">
+                                Énigme {{ progression.etape }} / {{ progression.total }}
+                            </p>
+                            <h1 class="text-xl font-bold">À résoudre</h1>
                         </div>
-
-                        <!-- ENIGME -->
-                        <div class="game-card">
-
-                            <div class="flex items-center gap-3 mb-5">
-
-                                <div class="h-12 w-12 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-2xl">
-                                    🧩
-                                </div>
-
-                                <div>
-
-                                    <p class="text-xs uppercase tracking-[0.3em] text-indigo-300">
-                                        Mission
-                                    </p>
-
-                                    <h2 class="text-2xl font-black">
-                                        Résolvez l'énigme
-                                    </h2>
-
-                                </div>
-
-                            </div>
-
-                            <div class="rounded-3xl bg-black/20 border border-white/10 p-6">
-
-                                <p class="text-lg md:text-xl leading-9 text-slate-100 font-medium">
-                                    “ {{ enigme.texte }} ”
-                                </p>
-
-                            </div>
-
+                        <div class="flex flex-col gap-2 shrink-0">
+                            <button
+                                v-if="partieEnPausePossible"
+                                type="button"
+                                @click="mettreEnPause"
+                                class="rounded-lg bg-white/20 hover:bg-white/30 px-3 py-1.5 text-xs font-semibold transition"
+                            >
+                                ⏸ Pause
+                            </button>
+                            <button
+                                type="button"
+                                @click="retourDashboard"
+                                class="rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition"
+                            >
+                                ← Dashboard
+                            </button>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- INDICES -->
-                        <div class="game-card">
-
-                            <div class="flex items-center justify-between">
-
-                                <h3 class="text-xl font-bold">
-                                    💡 Indices
-                                </h3>
-
-                                <span class="text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full">
-                                    {{ enigme.pivot.nb_indices_demandes }}/2
-                                </span>
-
-                            </div>
-
-                            <div class="mt-5 space-y-4">
-
-                                <div
-                                    v-if="enigme.pivot.nb_indices_demandes >= 1"
-                                    class="indice-card"
-                                >
-                                    <strong>Indice 1 :</strong>
-                                    {{ enigme.indice_1 }}
-                                </div>
-
-                                <div
-                                    v-if="enigme.pivot.nb_indices_demandes >= 2"
-                                    class="indice-card"
-                                >
-                                    <strong>Indice 2 :</strong>
-                                    {{ enigme.indice_2 }}
-                                </div>
-
-                                <button
-                                    v-if="enigme.pivot.nb_indices_demandes < 2 && !enigme.pivot.solution_affichee"
-                                    @click="demanderIndice"
-                                    class="action-btn bg-amber-500 hover:bg-amber-600"
-                                >
-                                    Obtenir un indice
-                                </button>
-
-                            </div>
-
-                        </div>
-
+                <!-- Contenu principal -->
+                <div class="bg-white p-6 shadow rounded-b-lg space-y-6">
+                    <!-- Image de l'énigme -->
+                    <div v-if="enigme.image" class="overflow-hidden rounded-lg max-h-60 bg-gray-200">
+                        <img
+                            :src="'/storage/' + enigme.image"
+                            alt="Illustration"
+                            class="w-full h-full object-cover"
+                        />
                     </div>
 
-                    <!-- SIDEBAR -->
-                    <div class="space-y-6">
+                    <!-- Texte de l'énigme -->
+                    <div class="prose max-w-none">
+                        <h3 class="text-gray-500 text-sm font-medium">Votre énigme</h3>
+                        <p class="text-lg text-gray-800 font-serif italic">" {{ enigme.texte }} "</p>
+                    </div>
 
-                        <!-- MAP -->
-                        <div class="game-card">
+                    <!-- Carte et validation GPS -->
+                    <div
+                        v-if="peutValiderGps"
+                        class="border-t border-gray-100 pt-4 space-y-3"
+                    >
+                        <h4 class="text-sm font-semibold text-gray-700">
+                            Valider votre position
+                        </h4>
+                        <p class="text-xs text-gray-500">
+                            Votre position sera comparée au lieu à trouver (rayon
+                            {{ rayon }} m).
+                        </p>
+                        <div
+                            id="play-map"
+                            ref="mapContainer"
+                            class="h-72 w-full rounded-xl border border-gray-200 z-0"
+                        />
+                        <p
+                            v-if="gpsError"
+                            class="text-sm rounded-lg px-4 py-3 bg-amber-50 text-amber-900 border border-amber-200"
+                        >
+                            {{ gpsError }}
+                        </p>
+                    </div>
 
-                            <div class="flex items-center justify-between mb-4">
+                    <!-- Section Indices -->
+                    <div class="border-t border-gray-100 pt-4 space-y-3">
+                        <h4 class="text-sm font-semibold text-gray-700">
+                            Indices demandés ({{ enigme.pivot.nb_indices_demandes }} / 2)
+                        </h4>
 
-                                <h3 class="text-xl font-bold">
-                                    📍 Carte GPS
-                                </h3>
+                        <div
+                            v-if="enigme.pivot.nb_indices_demandes >= 1"
+                            class="bg-amber-50 border-l-4 border-amber-500 p-3 rounded text-sm text-amber-900"
+                        >
+                            <strong>Indice 1 :</strong> {{ enigme.indice_1 }}
+                        </div>
 
-                                <span class="text-xs bg-green-500/20 text-green-300 px-3 py-1 rounded-full">
-                                    Rayon {{ rayon }}m
-                                </span>
+                        <div
+                            v-if="enigme.pivot.nb_indices_demandes >= 2"
+                            class="bg-amber-50 border-l-4 border-amber-500 p-3 rounded text-sm text-amber-900"
+                        >
+                            <strong>Indice 2 :</strong>
+                            {{ enigme.indice_2 || "Pas d'indice supplémentaire disponible." }}
+                        </div>
 
+                        <button
+                            v-if="enigme.pivot.nb_indices_demandes < 2 && !enigme.pivot.solution_affichee"
+                            @click="demanderIndice"
+                            class="text-xs bg-amber-500 text-white px-3 py-1.5 rounded shadow hover:bg-amber-600 transition"
+                        >
+                            Obtenir un indice
+                        </button>
+                    </div>
+
+                    <!-- Actions disponibles -->
+                    <div class="border-t border-gray-100 pt-4 space-y-4">
+                        <h4 class="text-sm font-semibold text-gray-700">Actions</h4>
+
+                        <div class="flex flex-wrap gap-3">
+                            <button
+                                v-if="peutValiderGps"
+                                type="button"
+                                :disabled="gpsLoading"
+                                @click="validerPosition"
+                                class="gps-validate-btn bg-green-600 text-white text-sm px-5 py-2.5 rounded-md shadow font-semibold disabled:opacity-60 transition"
+                            >
+                                {{
+                                    gpsLoading
+                                        ? 'Localisation...'
+                                        : '📍 Valider ma position GPS'
+                                }}
+                            </button>
+
+                            <button
+                                v-if="peutVoirSolution"
+                                type="button"
+                                @click="voirSolution"
+                                class="text-sm border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2.5 rounded-md font-medium transition"
+                            >
+                                Voir la solution (lieu)
+                            </button>
+
+                            <button
+                                v-if="peutPasserAutreEnigme"
+                                type="button"
+                                @click="passerAutreEnigme"
+                                class="text-sm border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 px-4 py-2.5 rounded-md font-medium transition"
+                            >
+                                Passer à une autre énigme →
+                            </button>
+
+                            <button
+                                v-if="peutPasserSuivant"
+                                type="button"
+                                @click="passerSuivant"
+                                class="bg-gray-800 text-white text-sm px-5 py-2.5 rounded-md shadow hover:bg-gray-700 font-medium transition"
+                            >
+                                Énigme suivante →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal pour la solution ou la validation réussie -->
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div
+                    v-if="showModal && modalLieu"
+                    class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4"
+                    @click.self="fermerModal"
+                >
+                    <Transition
+                        enter-active-class="transition duration-200 ease-out"
+                        enter-from-class="opacity-0 scale-95"
+                        enter-to-class="opacity-100 scale-100"
+                        leave-active-class="transition duration-150 ease-in"
+                        leave-from-class="opacity-100 scale-100"
+                        leave-to-class="opacity-0 scale-95"
+                        appear
+                    >
+                        <div
+                            v-if="showModal && modalLieu"
+                            class="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl"
+                            role="dialog"
+                            aria-modal="true"
+                        >
+                            <div
+                                v-if="modalLieu.type === 'success'"
+                                class="text-center mb-4"
+                            >
+                                <div class="text-5xl mb-2">🎉</div>
+                                <h2 class="text-2xl font-black text-green-700">
+                                    Félicitations !
+                                </h2>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Vous avez trouvé le bon endroit.
+                                </p>
                             </div>
 
                             <div
-                                ref="mapContainer"
-                                class="h-[350px] rounded-3xl overflow-hidden border border-white/10"
-                            />
-
-                            <p
-                                v-if="validationMessage"
-                                class="mt-4 rounded-2xl p-4 text-sm font-medium"
-                                :class="
-                                    validationOk
-                                        ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                                "
+                                v-else
+                                class="text-center mb-4"
                             >
-                                {{ validationMessage }}
-                            </p>
-
-                            <button
-                                v-if="!enigme.pivot.solution_affichee"
-                                @click="validerPosition"
-                                :disabled="gpsLoading"
-                                class="validate-btn mt-5"
-                            >
-
-                                <span v-if="gpsLoading">
-                                    Localisation...
-                                </span>
-
-                                <span v-else>
-                                    📡 Valider ma position
-                                </span>
-
-                            </button>
-
-                        </div>
-
-                        <!-- SOLUTION -->
-                        <div
-                            v-if="enigme.pivot.solution_affichee"
-                            class="game-card border border-red-500/30"
-                        >
-
-                            <h3 class="text-xl font-bold text-red-300">
-                                ☠️ Solution révélée
-                            </h3>
-
-                            <p class="mt-4 text-slate-200">
-                                {{ enigme.solution }}
-                            </p>
-
-                        </div>
-
-                        <!-- ACTIONS -->
-                        <div class="game-card">
-
-                            <h3 class="text-xl font-bold mb-5">
-                                ⚔️ Actions
-                            </h3>
-
-                            <div class="space-y-4">
-
-                                <button
-                                    v-if="!enigme.pivot.solution_affichee"
-                                    @click="voirSolution"
-                                    class="w-full action-btn bg-red-600 hover:bg-red-700"
-                                >
-                                    Voir la solution
-                                </button>
-
-                                <button
-                                    v-if="enigme.pivot.solution_affichee || enigme.pivot.statut === 'resolue'"
-                                    @click="passerSuivant"
-                                    class="w-full action-btn bg-indigo-600 hover:bg-indigo-700"
-                                >
-                                    Étape suivante →
-                                </button>
-
+                                <div class="text-5xl mb-2">📍</div>
+                                <h2 class="text-2xl font-black text-gray-800">
+                                    Le lieu à découvrir
+                                </h2>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Énigme marquée comme non résolue.
+                                </p>
                             </div>
 
+                            <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-5 space-y-2">
+                                <h3 class="text-lg font-bold text-gray-900">
+                                    {{ modalLieu.nom }}
+                                </h3>
+                                <p
+                                    v-if="modalLieu.description"
+                                    class="text-sm text-gray-600 leading-relaxed"
+                                >
+                                    {{ modalLieu.description }}
+                                </p>
+                                <p
+                                    v-else
+                                    class="text-sm text-gray-400 italic"
+                                >
+                                    Aucune description disponible pour ce lieu.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                @click="fermerModal"
+                                class="mt-6 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                            >
+                                Continuer
+                            </button>
                         </div>
-
-                    </div>
-
+                    </Transition>
                 </div>
-
-            </div>
-
-        </div>
-
+            </Transition>
+        </Teleport>
     </AuthenticatedLayout>
-
 </template>
 
 <style scoped>
-
-.game-card {
-
-    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl;
+/* Styles spécifiques pour Leaflet et boutons */
+#play-map {
+    z-index: 0;
 }
-
-.glass-card {
-
-    @apply bg-white/10 border border-white/10 rounded-2xl px-4 py-2 text-sm font-semibold backdrop-blur-lg;
-}
-
-.indice-card {
-
-    @apply bg-amber-500/10 border border-amber-500/20 text-amber-100 rounded-2xl p-4 text-sm;
-}
-
-.action-btn {
-
-    @apply px-5 py-3 rounded-2xl font-bold text-white transition-all duration-300 shadow-lg w-full;
-}
-
-.validate-btn {
-
-    @apply w-full rounded-2xl bg-green-600 hover:bg-green-700 py-4 font-black text-white transition-all duration-300 shadow-2xl;
-}
-
-.chrono-card {
-
-    animation: pulseChrono 1.5s infinite;
-}
-
-@keyframes pulseChrono {
-
-    0% {
-
-        transform: scale(1);
-    }
-
-    50% {
-
-        transform: scale(1.04);
-    }
-
-    100% {
-
-        transform: scale(1);
-    }
-
+.gps-validate-btn:hover:not(:disabled) {
+    background-color: #15803d;
 }
 </style>
