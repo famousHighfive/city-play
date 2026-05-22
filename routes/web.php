@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CheckAccessExpiration;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
@@ -32,6 +33,16 @@ Route::get('/', function () {
         'phpVersion' => PHP_VERSION,
     ]);
 });
+
+Route::middleware(['auth', CheckAccessExpiration::class])->group(function (){
+
+
+
+/*
+|--------------------------------------------------------------------------
+| DASHBOARD PLAYER
+|--------------------------------------------------------------------------
+*/
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [GameController::class, 'dashboard'])->name('dashboard');
@@ -110,9 +121,6 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
 ])->name('game.validate.position');
     Route::post('/game/{game}/pause', [GameController::class, 'pauseGame'])
         ->name('game.pause');
-
-    Route::post('/game/{game}/force-end', [GameController::class, 'forceEnd'])
-        ->name('game.force-end');
 });
 
 /*
@@ -155,6 +163,8 @@ Route::prefix('invitation')
         Route::get('/{token}', [InvitationController::class, 'show'])
             ->name('show');
     });
+
+});
 
 /*
 |--------------------------------------------------------------------------

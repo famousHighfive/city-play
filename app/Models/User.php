@@ -2,46 +2,80 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
+
 
 class User extends Authenticatable
 {
+    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, SoftDeletes;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'name',
+        'pseudo',
         'email',
         'password',
+        'telephone',
         'role',
-        'xp',
+        'account_status',
+        'profile_photo',
+        'access_expires_at',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected $casts = [
-        'email_verified_at' => 'datetime',
-        'password' => 'hashed',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'access_expires_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+
+    public function invitations()
+    {
+        return $this->hasMany(Invitation::class, 'player_id');
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isPlayer(): bool
+    {
+        return $this->role === 'player';
+    }
+
+    public function environmentsAccessibles()
+    {
+        return Environment::query()
+            ->where('actif', true)
+            ->whereIn(
+                'id',
+                $this->invitations()
+                    ->where('statut', 'used')
+                    ->pluck('environment_id')
+            )
+            ->get();
+    }
+
+    public function hasAccessToEnvironment(int|Environment $environment): bool
+    {
+        $environmentId = $environment instanceof Environment
+            ? $environment->id
+            : $environment;
+
+        return $this->invitations()
+            ->where('statut', 'used')
+            ->where('environment_id', $environmentId)
+            ->exists();
+    }
 }
