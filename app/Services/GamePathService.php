@@ -88,7 +88,7 @@ class GamePathService
 
         /*
         |--------------------------------------------------------------------------
-        | 4. Garder seulement lieux proches
+        | 4. Garder seulement lieux proches, or take closest ones if none are close enough
         |--------------------------------------------------------------------------
         */
 
@@ -98,6 +98,11 @@ class GamePathService
 
                 return $place->distance <= $distanceMax;
             });
+        
+        // If no places are within max distance, just take all places sorted by distance
+        if ($placesDisponibles->isEmpty()) {
+            $placesDisponibles = $placesAvecDistance;
+        }
 
         /*
         |--------------------------------------------------------------------------

@@ -20,6 +20,12 @@
         "vue": "^3.4.0"
     },
     "dependencies": {
-        "leaflet": "^1.9.4"
+        "@primevue/themes": "^4.5.4",
+        "chart.js": "^4.5.1",
+        "leaflet": "^1.9.4",
+        "pinia": "^3.0.4",
+        "primeicons": "^7.0.0",
+        "primevue": "^4.5.5",
+        "vue-chartjs": "^5.3.3"
     }
 }

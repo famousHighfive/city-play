@@ -42,20 +42,35 @@ class OtpController extends Controller
         // Récupère les infos de session
         $invitation = $this->invitationService->validerToken($token);
 
-        // Crée le compte du joueur
-        $player = User::create([
-            'name'     => session('invite_name'),
-            'pseudo'   => session('invite_pseudo'),
-            'email'    => filter_var(session('invite_destinataire'), FILTER_VALIDATE_EMAIL)
-                            ? session('invite_destinataire')
-                            : null,
-            'telephone' => !filter_var(session('invite_destinataire'), FILTER_VALIDATE_EMAIL)
-                            ? session('invite_destinataire')
-                            : null,
-            'password' => Hash::make(session('invite_password')),
-            'role'     => 'player',
-            'email_verified_at' => now(),
-        ]);
+        $destinataire = session('invite_destinataire');
+        $isEmail = filter_var($destinataire, FILTER_VALIDATE_EMAIL);
+
+        // Vérifie si le joueur existe déjà (par email ou téléphone)
+        $player = null;
+        if ($isEmail) {
+            $player = User::where('email', $destinataire)->first();
+        } else {
+            $player = User::where('telephone', $destinataire)->first();
+        }
+
+        if (!$player) {
+            // Crée le compte du joueur si pas trouvé
+            $player = User::create([
+                'name'     => session('invite_name'),
+                'pseudo'   => session('invite_pseudo'),
+                'email'    => $isEmail ? $destinataire : null,
+                'telephone' => !$isEmail ? $destinataire : null,
+                'password' => Hash::make(session('invite_password')),
+                'role'     => 'player',
+                'email_verified_at' => $isEmail ? now() : null,
+            ]);
+        } else {
+            // Si le joueur existe déjà, on peut mettre à jour les informations si nécessaire
+            // Par exemple, vérifier que le rôle est bien 'player'
+            if ($player->role !== 'player') {
+                $player->update(['role' => 'player']);
+            }
+        }
 
         // Marque l'invitation comme utilisée et lie le joueur
         $this->invitationService->marquerUtilisee($invitation, $player);

@@ -120,6 +120,7 @@ class GameController extends Controller
     }
     public function startNewGame(Request $request, Environment $environment)
     {
+        \Log::info('startNewGame called!', ['user_id' => auth()->id(), 'environment_id' => $environment->id, 'request' => $request->all()]);
         $this->authorizePlayerEnvironment($environment);
 
         $validated = $request->validate([
@@ -134,6 +135,8 @@ class GameController extends Controller
             'longitude' => 'required|numeric',
             'challenger_email' => 'required_if:mode_jeu,challenge|nullable|email',
         ]);
+        
+        \Log::info('Validation passed!', ['validated' => $validated]);
 
         if ($validated['mode_jeu'] === 'equipe') {
             $nbMembres = (int) $validated['nb_membres'];
@@ -157,14 +160,18 @@ class GameController extends Controller
             $participants = null;
         }
 
-        $existingGame = Game::where('user_id', auth()->id())
+        // Delete any existing finished game for this environment to allow new game
+        Game::where('user_id', auth()->id())
+            ->where('environment_id', $environment->id)
+            ->where('statut', 'terminee')
+            ->delete();
+
+        // Only check for existing game if we're not explicitly starting a new one (like from ?nouvelle=1)
+        // For now, let's just delete any in-progress game to let the user start fresh
+        Game::where('user_id', auth()->id())
             ->where('environment_id', $environment->id)
             ->where('statut', 'en_cours')
-            ->first();
-
-        if ($existingGame && $this->peutReprendrePartie($existingGame)) {
-            return to_route('game.resume', $existingGame->id);
-        }
+            ->delete();
 
         $game = Game::create([
             'user_id' => auth()->id(),
@@ -184,6 +191,8 @@ class GameController extends Controller
             'latitude_depart' => $validated['latitude'],
             'longitude_depart' => $validated['longitude'],
         ]);
+        
+        \Log::info('Game created!', ['game_id' => $game->id]);
 
         $parcours = app(GamePathService::class)
 
@@ -200,10 +209,12 @@ class GameController extends Controller
 
                 (int) $validated['duree_prevue'],
             );
+            
+        \Log::info('Parcours built!', ['count' => $parcours->count()]);
 
         if ($parcours->isEmpty()) {
             $game->delete();
-
+            \Log::info('Parcours is empty! Deleting game and returning error.');
             return back()->with('error', 'Cette ville ne contient aucune énigme active pour le moment.');
         }
 
@@ -226,8 +237,36 @@ class GameController extends Controller
                 ]
             );
         }
-        // dd($parcours);
+        
+        \Log::info('Enigmes attached to game!');
+
+        // Store parcours in session temporarily
+        $formattedParcours = $parcours->map(function ($step) {
+            return [
+                'latitude' => $step['place']->latitude,
+                'longitude' => $step['place']->longitude,
+            ];
+        })->values();
+        
+        session(['game_parcours' => $formattedParcours]);
+        \Log::info('Parcours stored in session!', ['parcours' => $formattedParcours]);
+
+        // Redirect directly to game for now to test
+        \Log::info('Redirecting to game show!', ['route' => route('game.show', $game->id)]);
         return to_route('game.show', $game->id);
+    }
+
+    public function startSequence(Game $game)
+    {
+        $this->ensureGameOwner($game);
+        
+        $parcours = session('game_parcours', []);
+        session()->forget('game_parcours');
+        
+        return Inertia::render('Game/GameStartSequence', [
+            'gameId' => $game->id,
+            'parcours' => $parcours,
+        ]);
     }
 
     public function resume(Game $game)

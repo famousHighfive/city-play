@@ -88,6 +88,9 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
 
     Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
         ->name('game.start');
+        
+    Route::get('/game/{game}/start-sequence', [GameController::class, 'startSequence'])
+        ->name('game.start-sequence');
 
     Route::get('/game/{game}/resume', [GameController::class, 'resume'])
         ->name('game.resume');

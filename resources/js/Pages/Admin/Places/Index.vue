@@ -1,20 +1,54 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import ConfirmDialog from 'primevue/confirmdialog';
+import { useConfirm } from 'primevue/useconfirm';
+import { ref, computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     places: {
         type: Array,
         required: true
     }
 });
 
+const confirm = useConfirm();
 const form = useForm();
+const searchQuery = ref('');
+const environmentFilter = ref('all');
+
+const uniqueEnvironments = computed(() => {
+    const envs = new Set();
+    props.places.forEach(place => {
+        if (place.environment) {
+            envs.add(JSON.stringify({ id: place.environment.id, nom: place.environment.nom }));
+        }
+    });
+    return Array.from(envs).map(JSON.parse);
+});
+
+const filteredPlaces = computed(() => {
+    return props.places.filter(place => {
+        const matchesSearch = !searchQuery.value || 
+            place.nom.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+            (place.description && place.description.toLowerCase().includes(searchQuery.value.toLowerCase()));
+        
+        const matchesEnvironment = environmentFilter.value === 'all' || 
+            (place.environment && place.environment.id == environmentFilter.value);
+        
+        return matchesSearch && matchesEnvironment;
+    });
+});
 
 const deletePlace = (place) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer ce lieu ?')) {
-        form.delete(route('places.destroy', place.id));
-    }
+    confirm.require({
+        message: 'Êtes-vous sûr de vouloir supprimer ce lieu ?',
+        header: 'Confirmation de suppression',
+        icon: 'pi pi-exclamation-triangle',
+        accept: () => {
+            form.delete(route('places.destroy', place.id));
+        }
+    });
 };
 </script>
 
@@ -25,7 +59,7 @@ const deletePlace = (place) => {
         <template #default>
             <!-- En-tête de la page avec bouton de création -->
             <header class="bg-white shadow">
-                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
+                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <h2 class="text-xl font-semibold leading-tight text-gray-800">
                         Liste des Places
                     </h2>
@@ -44,14 +78,37 @@ const deletePlace = (place) => {
                 <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
                     <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg p-6">
                         
+                        <!-- Filtres et recherche -->
+                        <div class="mb-6 flex flex-col sm:flex-row gap-4">
+                            <input 
+                                v-model="searchQuery" 
+                                type="text" 
+                                placeholder="Rechercher par nom ou description..." 
+                                class="flex-1 rounded-lg border-gray-300 px-4 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            />
+                            <select 
+                                v-model="environmentFilter" 
+                                class="rounded-lg border-gray-300 px-4 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                                <option value="all">Tous les environnements</option>
+                                <option v-for="env in uniqueEnvironments" :key="env.id" :value="env.id">
+                                    {{ env.nom }}
+                                </option>
+                            </select>
+                        </div>
+                        
                         <!-- Cas vide -->
-                        <div v-if="places.length === 0" class="text-center py-12">
+                        <div v-if="filteredPlaces.length === 0" class="text-center py-12">
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">Aucune place disponible</h3>
-                            <p class="mt-1 text-sm text-gray-500">Ajoutez des points d'intérêt ou des zones géographiques.</p>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">
+                                {{ props.places.length === 0 ? 'Aucune place disponible' : 'Aucune place ne correspond à vos filtres' }}
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{ props.places.length === 0 ? 'Ajoutez des points d\'intérêt ou des zones géographiques.' : 'Essayez de modifier vos critères de recherche.' }}
+                            </p>
                         </div>
 
                         <!-- Tableau des données -->
@@ -67,7 +124,7 @@ const deletePlace = (place) => {
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="place in places" :key="place.id" class="hover:bg-gray-50">
+                                    <tr v-for="place in filteredPlaces" :key="place.id" class="hover:bg-gray-50">
                                         
                                         <!-- Nom & Description Légère -->
                                         <td class="px-6 py-4">
@@ -112,6 +169,7 @@ const deletePlace = (place) => {
                     </div>
                 </div>
             </div>
+        <ConfirmDialog />
         </template>
     </AppLayout>
 </template>
