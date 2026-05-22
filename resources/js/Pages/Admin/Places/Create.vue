@@ -3,10 +3,14 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { onMounted, ref } from 'vue';
 import L from 'leaflet';
+import Toast from 'primevue/toast';
+import { useToast } from 'primevue/usetoast';
 
 defineProps({
     environments: Array
 });
+
+const toast = useToast();
 
 const map = ref(null);
 const search = ref('');
@@ -37,6 +41,7 @@ const submit = () => {
             }
 
             map.value.setView([6.370293, 2.391236], 13);
+            toast.add({ severity: 'success', summary: 'Succès', detail: 'Lieu créé avec succès !', life: 5000 });
         }
     });
 };
@@ -94,9 +99,7 @@ const updateMarker = (lat, lng) => {
 const useCurrentLocation = () => {
 
     if (!navigator.geolocation) {
-
-        alert('Géolocalisation non supportée');
-
+        toast.add({ severity: 'error', summary: 'Erreur', detail: 'Géolocalisation non supportée', life: 5000 });
         return;
     }
 
@@ -130,7 +133,7 @@ const useCurrentLocation = () => {
         },
 
         () => {
-            alert('Impossible de récupérer votre position');
+            toast.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de récupérer votre position', life: 5000 });
         }
     );
 };
@@ -138,9 +141,7 @@ const useCurrentLocation = () => {
 const searchPlace = async () => {
 
     if (!search.value) {
-
-        alert('Veuillez saisir un lieu');
-
+        toast.add({ severity: 'warn', summary: 'Attention', detail: 'Veuillez saisir un lieu', life: 5000 });
         return;
     }
 
@@ -153,9 +154,7 @@ const searchPlace = async () => {
         const data = await response.json();
 
         if (data.length === 0) {
-
-            alert('Lieu introuvable');
-
+            toast.add({ severity: 'warn', summary: 'Attention', detail: 'Lieu introuvable', life: 5000 });
             return;
         }
 
@@ -171,10 +170,8 @@ const searchPlace = async () => {
         updateMarker(lat, lng);
 
     } catch (error) {
-
         console.error(error);
-
-        alert('Erreur lors de la recherche');
+        toast.add({ severity: 'error', summary: 'Erreur', detail: 'Erreur lors de la recherche', life: 5000 });
     }
 };
 </script>
@@ -440,7 +437,7 @@ const searchPlace = async () => {
             </div>
 
         </div>
-
+        <Toast position="top-right" />
     </AppLayout>
 
 </template>

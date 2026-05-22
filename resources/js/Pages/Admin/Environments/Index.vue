@@ -1,20 +1,45 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import ConfirmDialog from 'primevue/confirmdialog';
+import { useConfirm } from 'primevue/useconfirm';
+import { ref, computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     environments: {
         type: Array,
         required: true
     }
 });
 
+const confirm = useConfirm();
 const form = useForm();
+const searchQuery = ref('');
+const statusFilter = ref('all');
+
+const filteredEnvironments = computed(() => {
+    return props.environments.filter(env => {
+        const matchesSearch = !searchQuery.value || 
+            env.nom.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+            (env.description && env.description.toLowerCase().includes(searchQuery.value.toLowerCase()));
+        
+        const matchesStatus = statusFilter.value === 'all' || 
+            (statusFilter.value === 'active' && env.actif) ||
+            (statusFilter.value === 'inactive' && !env.actif);
+        
+        return matchesSearch && matchesStatus;
+    });
+});
 
 const deleteEnvironment = (environment) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet environnement ?')) {
-        form.delete(route('environments.destroy', environment.id));
-    }
+    confirm.require({
+        message: 'Êtes-vous sûr de vouloir supprimer cet environnement ?',
+        header: 'Confirmation de suppression',
+        icon: 'pi pi-exclamation-triangle',
+        accept: () => {
+            form.delete(route('environments.destroy', environment.id));
+        }
+    });
 };
 </script>
 
@@ -25,7 +50,7 @@ const deleteEnvironment = (environment) => {
         <template #default>
             <!-- En-tête de la page avec bouton de création -->
             <header class="bg-white shadow">
-                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
+                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <h2 class="text-xl font-semibold leading-tight text-gray-800">
                         Liste des Environnements
                     </h2>
@@ -45,13 +70,35 @@ const deleteEnvironment = (environment) => {
                 <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
                     <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg p-6">
                         
+                        <!-- Filtres et recherche -->
+                        <div class="mb-6 flex flex-col sm:flex-row gap-4">
+                            <input 
+                                v-model="searchQuery" 
+                                type="text" 
+                                placeholder="Rechercher par nom ou description..." 
+                                class="flex-1 rounded-lg border-gray-300 px-4 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            />
+                            <select 
+                                v-model="statusFilter" 
+                                class="rounded-lg border-gray-300 px-4 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                                <option value="all">Tous les statuts</option>
+                                <option value="active">Actif</option>
+                                <option value="inactive">Inactif</option>
+                            </select>
+                        </div>
+                        
                         <!-- Cas où il n'y a aucun environnement en base de données -->
-                        <div v-if="environments.length === 0" class="text-center py-12">
+                        <div v-if="filteredEnvironments.length === 0" class="text-center py-12">
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                             </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun environnement</h3>
-                            <p class="mt-1 text-sm text-gray-500">Commencez par créer votre premier environnement système.</p>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">
+                                {{ props.environments.length === 0 ? 'Aucun environnement' : 'Aucun environnement ne correspond à vos filtres' }}
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                {{ props.environments.length === 0 ? 'Commencez par créer votre premier environnement système.' : 'Essayez de modifier vos critères de recherche.' }}
+                            </p>
                         </div>
 
                         <!-- Tableau des données -->
@@ -67,7 +114,7 @@ const deleteEnvironment = (environment) => {
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="env in environments" :key="env.id" class="hover:bg-gray-50">
+                                    <tr v-for="env in filteredEnvironments" :key="env.id" class="hover:bg-gray-50">
                                         <!-- ID -->
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             #{{ env.id }}
@@ -118,6 +165,7 @@ const deleteEnvironment = (environment) => {
                     </div>
                 </div>
             </div>
+        <ConfirmDialog />
         </template>
     </AppLayout>
 </template>
