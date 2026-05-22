@@ -251,9 +251,9 @@ class GameController extends Controller
         session(['game_parcours' => $formattedParcours]);
         \Log::info('Parcours stored in session!', ['parcours' => $formattedParcours]);
 
-        // Redirect directly to game for now to test
-        \Log::info('Redirecting to game show!', ['route' => route('game.show', $game->id)]);
-        return to_route('game.show', $game->id);
+        // Redirect to the immersive start sequence
+        \Log::info('Redirecting to start sequence!', ['route' => route('game.start-sequence', $game->id)]);
+        return to_route('game.start-sequence', $game->id);
     }
 
     public function startSequence(Game $game)
@@ -264,7 +264,7 @@ class GameController extends Controller
         session()->forget('game_parcours');
         
         return Inertia::render('Game/GameStartSequence', [
-            'gameId' => $game->id,
+            'game' => $game,
             'parcours' => $parcours,
         ]);
     }
