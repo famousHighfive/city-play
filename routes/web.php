@@ -33,12 +33,6 @@ Route::get('/', function () {
     ]);
 });
 
-/*
-|--------------------------------------------------------------------------
-| DASHBOARD PLAYER
-|--------------------------------------------------------------------------
-*/
-
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [GameController::class, 'dashboard'])->name('dashboard');
 });
@@ -116,6 +110,9 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
 ])->name('game.validate.position');
     Route::post('/game/{game}/pause', [GameController::class, 'pauseGame'])
         ->name('game.pause');
+
+    Route::post('/game/{game}/force-end', [GameController::class, 'forceEnd'])
+        ->name('game.force-end');
 });
 
 /*

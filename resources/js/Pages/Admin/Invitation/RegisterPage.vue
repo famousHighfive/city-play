@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { useForm, Head } from '@inertiajs/vue3'
+import GuestLayout from '@/Layouts/GuestLayout.vue'
 
 const props = defineProps({
     token: String,
@@ -34,126 +35,134 @@ const submit = () => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 w-full max-w-md p-8">
+    <GuestLayout>
+        <Head title="Invitation à jouer - CITYPLAY" />
 
-            <!-- En-tête -->
-            <div class="mb-8 text-center">
-                <h1 class="text-2xl font-semibold text-gray-900 mb-1">
-                    Tu es invité à jouer !
-                </h1>
-                <p class="text-gray-500 text-sm">
-                    Environnement :
-                    <span class="font-medium text-gray-700">{{ environment.nom }}</span>
+        <!-- En-tête de l'invitation fluide -->
+        <div class="mb-8">
+            <div class="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-3 py-1 text-[11px] font-medium text-emerald-400 mb-3">
+                <span class="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Quête Partagée
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">
+                Tu es invité à jouer !
+            </h1>
+            <p class="text-xs text-slate-400 mt-1 font-light leading-relaxed">
+                Rejoins l'environnement : <span class="font-medium text-emerald-400">{{ environment.nom }}</span>
+            </p>
+        </div>
+
+        <!-- Formulaire immersif et apaisant à l'œil -->
+        <form @submit.prevent="submit" class="space-y-5">
+
+            <!-- CHAMP : PRÉNOM -->
+            <div class="space-y-1.5">
+                <label for="name" class="block text-xs font-medium text-slate-300 tracking-wide pl-1">
+                    Ton prénom
+                </label>
+                <input
+                    id="name"
+                    v-model="form.name"
+                    type="text"
+                    placeholder="Marie"
+                    class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.02] text-white focus:border-emerald-500/40 focus:ring-0 transition-all duration-200 placeholder-slate-600 text-sm"
+                    required
+                />
+                <p v-if="form.errors.name" class="mt-1.5 text-xs text-rose-400/90 pl-1">
+                    {{ form.errors.name }}
                 </p>
             </div>
 
-            <!-- Formulaire -->
-            <div class="space-y-5">
-
-                <!-- Nom -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                        Ton prénom
-                    </label>
-                    <input
-                        v-model="form.name"
-                        type="text"
-                        placeholder="Marie"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p v-if="form.errors.name" class="text-red-500 text-xs mt-1">
-                        {{ form.errors.name }}
-                    </p>
-                </div>
-
-                <!-- Pseudo -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                        Choisis un pseudo
-                    </label>
-                    <input
-                        v-model="form.pseudo"
-                        type="text"
-                        placeholder="Explorateur42"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p v-if="form.errors.pseudo" class="text-red-500 text-xs mt-1">
-                        {{ form.errors.pseudo }}
-                    </p>
-                </div>
-
-                <!-- Email ou téléphone selon le canal -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                        {{ labelDestinataire }}
-                    </label>
-                    <input
-                        v-model="form.destinataire"
-                        :type="canal === 'email' ? 'email' : 'tel'"
-                        :placeholder="placeholder"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p v-if="form.errors.destinataire" class="text-red-500 text-xs mt-1">
-                        {{ form.errors.destinataire }}
-                    </p>
-                </div>
-
-                <!-- Mot de passe -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                        Ton mot de passe
-                    </label>
-                    <input
-                        v-model="form.password"
-                        type="password"
-                        placeholder="••••••••"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <p v-if="form.errors.password" class="text-red-500 text-xs mt-1">
-                        {{ form.errors.password }}
-                    </p>
-                </div>
-
-                <!-- Confirmation mot de passe -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                        Confirme ton mot de passe
-                    </label>
-                    <input
-                        v-model="form.password_confirmation"
-                        type="password"
-                        placeholder="••••••••"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-
-                <!-- Canal affiché en lecture seule -->
-                <div class="bg-gray-50 rounded-lg px-4 py-3 flex items-center gap-2">
-                    <span class="text-xs text-gray-500">
-                        Tu recevras ton code de vérification par
-                    </span>
-                    <span class="text-xs font-semibold text-indigo-600 uppercase">
-                        {{ canal }}
-                    </span>
-                </div>
-
-                <!-- Bouton -->
-                <button
-                    @click="submit"
-                    :disabled="form.processing"
-                    class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50
-                           text-white font-medium rounded-lg py-2.5 text-sm transition"
-                >
-                    {{ form.processing ? 'Envoi en cours...' : 'Recevoir mon code' }}
-                </button>
-
+            <!-- CHAMP : PSEUDO -->
+            <div class="space-y-1.5">
+                <label for="pseudo" class="block text-xs font-medium text-slate-300 tracking-wide pl-1">
+                    Choisis un pseudo
+                </label>
+                <input
+                    id="pseudo"
+                    v-model="form.pseudo"
+                    type="text"
+                    placeholder="Explorateur229"
+                    class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.02] text-white focus:border-emerald-500/40 focus:ring-0 transition-all duration-200 placeholder-slate-600 text-sm"
+                    required
+                />
+                <p v-if="form.errors.pseudo" class="mt-1.5 text-xs text-rose-400/90 pl-1">
+                    {{ form.errors.pseudo }}
+                </p>
             </div>
-        </div>
-    </div>
+
+            <!-- CHAMP : DESTINATAIRE (DYNAMIQUE) -->
+            <div class="space-y-1.5">
+                <label for="destinataire" class="block text-xs font-medium text-slate-300 tracking-wide pl-1">
+                    {{ labelDestinataire }}
+                </label>
+                <input
+                    id="destinataire"
+                    v-model="form.destinataire"
+                    :type="canal === 'email' ? 'email' : 'tel'"
+                    :placeholder="placeholder"
+                    class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.02] text-white focus:border-emerald-500/40 focus:ring-0 transition-all duration-200 placeholder-slate-600 text-sm"
+                    required
+                />
+                <p v-if="form.errors.destinataire" class="mt-1.5 text-xs text-rose-400/90 pl-1">
+                    {{ form.errors.destinataire }}
+                </p>
+            </div>
+
+            <!-- CHAMP : MOT DE PASSE -->
+            <div class="space-y-1.5">
+                <label for="password" class="block text-xs font-medium text-slate-300 tracking-wide pl-1">
+                    Ton mot de passe
+                </label>
+                <input
+                    id="password"
+                    v-model="form.password"
+                    type="password"
+                    placeholder="••••••••"
+                    class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.02] text-white focus:border-emerald-500/40 focus:ring-0 transition-all duration-200 placeholder-slate-600 text-sm"
+                    required
+                />
+                <p v-if="form.errors.password" class="mt-1.5 text-xs text-rose-400/90 pl-1">
+                    {{ form.errors.password }}
+                </p>
+            </div>
+
+            <!-- CHAMP : CONFIRMATION -->
+            <div class="space-y-1.5">
+                <label for="password_confirmation" class="block text-xs font-medium text-slate-300 tracking-wide pl-1">
+                    Confirme ton mot de passe
+                </label>
+                <input
+                    id="password_confirmation"
+                    v-model="form.password_confirmation"
+                    type="password"
+                    placeholder="••••••••"
+                    class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.02] text-white focus:border-emerald-500/40 focus:ring-0 transition-all duration-200 placeholder-slate-600 text-sm"
+                    required
+                />
+            </div>
+
+            <!-- Notification du Canal (Lecture seule) -->
+            <div class="rounded-xl border border-white/5 bg-white/[0.01] px-4 py-3 flex items-center justify-between text-xs backdrop-blur-sm">
+                <span class="text-slate-400 font-light">
+                    Code de vérification envoyé via
+                </span>
+                <span class="font-semibold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    {{ canal }}
+                </span>
+            </div>
+
+            <!-- BOUTON DE SOUMISSION -->
+            <div class="pt-2">
+                <button
+                    type="submit"
+                    :disabled="form.processing"
+                    class="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold tracking-wide text-sm justify-center flex items-center shadow-lg shadow-emerald-500/5 transition-all duration-200 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                    {{ form.processing ? 'Génération de l\'accès...' : 'Recevoir mon code' }}
+                </button>
+            </div>
+
+        </form>
+    </GuestLayout>
 </template>

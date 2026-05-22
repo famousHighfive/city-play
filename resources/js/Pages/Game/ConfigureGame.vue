@@ -52,6 +52,16 @@ const form = useForm({
     longitude: null,
 });
 
+const dureeOptions = [
+    { label: '30 min', value: 30 },
+    { label: '1h', value: 60 },
+    { label: '2h', value: 120 },
+    { label: '4h', value: 240 },
+    { label: '8h', value: 480 },
+    { label: '12h', value: 720 },
+    { label: '24h', value: 1440 },
+];
+
 const nbEmailsCoEquipiers = computed(() => Math.max(0, (parseInt(form.nb_membres) || 1) - 1));
 
 watch(() => form.nb_membres, (value) => {
@@ -103,7 +113,7 @@ const locomotionIcon = computed(() => {
 
 const nextStep = () => {
     audioStore.play('click');
-    if (currentStep.value < 4) {
+    if (currentStep.value < 5) {
         currentStep.value++;
     }
 };
@@ -300,7 +310,7 @@ onMounted(() => {
                 <div class="mb-10">
                     <div class="flex items-center justify-center gap-2">
                         <div 
-                            v-for="step in 4" 
+                            v-for="step in 5" 
                             :key="step"
                             class="flex items-center gap-2"
                         >
@@ -313,7 +323,7 @@ onMounted(() => {
                                 {{ step }}
                             </div>
                             <div 
-                                v-if="step < 4"
+                                v-if="step < 5"
                                 class="w-12 h-1 rounded-full transition-all duration-300"
                                 :class="currentStep > step ? 'bg-gradient-to-r from-indigo-600 to-purple-600' : 'bg-gray-200'"
                             ></div>
@@ -476,18 +486,22 @@ onMounted(() => {
                             <div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200">
                                 <div class="text-3xl mb-3">⏱️</div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Durée estimée (min)
+                                    Durée de la partie
                                 </label>
-                                <input
+                                <select
                                     v-model.number="form.duree_prevue"
-                                    type="range"
-                                    :min="gameOptions.duree_min"
-                                    :max="gameOptions.duree_max"
-                                    :step="15"
-                                    class="w-full"
-                                />
-                                <div class="mt-2 text-2xl font-bold text-blue-700">
-                                    {{ form.duree_prevue }} min
+                                    class="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white focus:border-indigo-500 outline-none"
+                                >
+                                    <option
+                                        v-for="option in dureeOptions"
+                                        :key="option.value"
+                                        :value="option.value"
+                                    >
+                                        {{ option.label }}
+                                    </option>
+                                </select>
+                                <div class="mt-2 text-xl font-bold text-blue-700">
+                                    {{ form.duree_prevue >= 60 ? Math.floor(form.duree_prevue / 60) + 'h' + (form.duree_prevue % 60 > 0 ? form.duree_prevue % 60 : '') : form.duree_prevue + ' min' }}
                                 </div>
                             </div>
 
@@ -525,8 +539,94 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <!-- Step 4: Location -->
+                    <!-- Step 4: Recap -->
                     <div v-if="currentStep === 4" class="p-8">
+                        <button
+                            @click="prevStep"
+                            class="mb-6 px-4 py-2 text-gray-600 hover:text-gray-900 font-semibold text-sm flex items-center gap-2"
+                        >
+                            ← Retour
+                        </button>
+                        
+                        <div class="text-center mb-8">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">Récapitulatif de votre partie</h2>
+                            <p class="text-gray-500">Vérifiez vos informations avant de commencer</p>
+                        </div>
+
+                        <div class="max-w-2xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">{{ form.mode_jeu === 'equipe' ? '👥' : '🎯' }}</span>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">Mode de jeu</p>
+                                        <p class="font-bold text-gray-900">{{ form.mode_jeu === 'equipe' ? 'Mode Équipe' : 'Mode Défi' }}</p>
+                                    </div>
+                                </div>
+                                <div v-if="form.mode_jeu === 'equipe'" class="pl-9">
+                                    <p class="text-sm text-gray-600">{{ form.nb_membres }} membres</p>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        <span v-for="(p, i) in form.participants" :key="i" class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                                            {{ p || 'Email non saisi' }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">🧠</span>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">Difficulté</p>
+                                        <p class="font-bold text-gray-900">{{ difficultyLabel }}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">⏱️</span>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">Durée prévue</p>
+                                        <p class="font-bold text-gray-900">{{ form.duree_prevue >= 60 ? Math.floor(form.duree_prevue / 60) + 'h' + (form.duree_prevue % 60 > 0 ? form.duree_prevue % 60 : '') : form.duree_prevue + ' min' }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">{{ locomotionIcon }}</span>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">Locomotion</p>
+                                        <p class="font-bold text-gray-900">{{ locomotionLabel }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">📍</span>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">Position</p>
+                                        <p class="font-bold text-gray-900" :class="positionCaptured ? 'text-emerald-600' : 'text-red-600'">
+                                            {{ positionCaptured ? 'Capturée' : 'Non capturée' }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button v-if="!positionCaptured" @click="capturePosition" class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg">
+                                    Capturer maintenant
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="mt-10 text-center">
+                            <button
+                                @click="currentStep = 5"
+                                class="px-10 py-4 bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+                            >
+                                Tout est bon, continuer ! →
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Location (Old Step 4) -->
+                    <div v-if="currentStep === 5" class="p-8">
                         <button
                             @click="prevStep"
                             class="mb-6 px-4 py-2 text-gray-600 hover:text-gray-900 font-semibold text-sm flex items-center gap-2"

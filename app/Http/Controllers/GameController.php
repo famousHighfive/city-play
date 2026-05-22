@@ -67,6 +67,8 @@ class GameController extends Controller
             'parties_en_cours' => $games->where('peut_reprendre', true)->count(),
             'enigmes_resolues' => $games->sum('progression.resolues'),
             'enigmes_total' => $games->sum('progression.total'),
+            'xp' => $user->xp,
+            'level' => $user->level,
         ];
 
         if ($stats['enigmes_total'] > 0) {
@@ -77,11 +79,19 @@ class GameController extends Controller
             $stats['pourcentage_global'] = 0;
         }
 
+        // Récupérer les événements planifiés à venir
+        $evenements = \App\Models\PlannedEvent::where('actif', true)
+            ->where('date_evenement', '>=', now())
+            ->with('environment')
+            ->orderBy('date_evenement', 'asc')
+            ->get();
+
         return Inertia::render('Dashboard', [
             'environments' => $environmentsAvecPartie,
             'games' => $games->values(),
             'stats' => $stats,
             'labels' => $this->dashboardLabels(),
+            'evenements' => $evenements,
         ]);
     }
 
@@ -120,45 +130,23 @@ class GameController extends Controller
     }
     public function startNewGame(Request $request, Environment $environment)
     {
-        \Log::info('startNewGame called!', ['user_id' => auth()->id(), 'environment_id' => $environment->id, 'request' => $request->all()]);
         $this->authorizePlayerEnvironment($environment);
 
         $validated = $request->validate([
             'mode_jeu' => ['required', Rule::in(['equipe', 'challenge'])],
-            'duree_prevue' => 'required|integer|min:1',
-            'moyen_locomotion' => ['required', Rule::in(['pied', 'velo', 'voiture'])],
-            'niveau_difficulte' => ['required', Rule::in(['easy', 'medium', 'hard', 'kid'])],
-            'nb_membres' => 'required_if:mode_jeu,equipe|nullable|integer|min:1|max:10',
-            'participants' => 'nullable|array',
-            'participants.*' => 'required|email|distinct',
-            'latitude' => 'required|numeric',
-            'longitude' => 'required|numeric',
-            'challenger_email' => 'required_if:mode_jeu,challenge|nullable|email',
+            'nb_membres' => ['required_if:mode_jeu,equipe', 'integer', 'min:1'],
+            'participants' => ['nullable', 'array'],
+            'participants.*' => ['nullable', 'email'],
+            'challenger_email' => ['required_if:mode_jeu,challenge', 'nullable', 'email'],
+            'duree_prevue' => ['required', 'integer', 'min:1'],
+            'moyen_locomotion' => ['required', 'string'],
+            'niveau_difficulte' => ['required', 'string'],
+            'latitude' => ['required', 'numeric'],
+            'longitude' => ['required', 'numeric'],
         ]);
-        
-        \Log::info('Validation passed!', ['validated' => $validated]);
 
-        if ($validated['mode_jeu'] === 'equipe') {
-            $nbMembres = (int) $validated['nb_membres'];
-            $emailsCoEquipiers = array_values($validated['participants'] ?? []);
-            $nbCoEquipiersAttendu = max(0, $nbMembres - 1);
-
-            if (count($emailsCoEquipiers) !== $nbCoEquipiersAttendu) {
-                throw ValidationException::withMessages([
-                    'participants' => $nbCoEquipiersAttendu === 0
-                        ? 'Aucun email supplémentaire n\'est requis lorsque vous jouez seul.'
-                        : "Indiquez {$nbCoEquipiersAttendu} email(s) pour vos coéquipiers.",
-                ]);
-            }
-
-            $captainEmail = auth()->user()->email;
-            $participants = $captainEmail
-                ? array_merge([$captainEmail], $emailsCoEquipiers)
-                : $emailsCoEquipiers;
-        } else {
-            $nbMembres = 1;
-            $participants = null;
-        }
+        $nbMembres = $validated['mode_jeu'] === 'equipe' ? (int) $validated['nb_membres'] : 1;
+        $participants = $validated['mode_jeu'] === 'equipe' ? array_filter($validated['participants'] ?? []) : [];
 
         // Delete any existing finished game for this environment to allow new game
         Game::where('user_id', auth()->id())
@@ -166,11 +154,10 @@ class GameController extends Controller
             ->where('statut', 'terminee')
             ->delete();
 
-        // Only check for existing game if we're not explicitly starting a new one (like from ?nouvelle=1)
-        // For now, let's just delete any in-progress game to let the user start fresh
+        // Delete any in-progress game to let the user start fresh
         Game::where('user_id', auth()->id())
             ->where('environment_id', $environment->id)
-            ->where('statut', 'en_cours')
+            ->whereIn('statut', ['en_cours', 'pause'])
             ->delete();
 
         $game = Game::create([
@@ -185,7 +172,7 @@ class GameController extends Controller
                 ? $validated['challenger_email']
                 : null,
             'duree_prevue' => $validated['duree_prevue'],
-            'duree_restante' => $validated['duree_prevue'],
+            'duree_restante' => $validated['duree_prevue'] * 60, // Stocké en secondes pour précision
             'moyen_locomotion' => $validated['moyen_locomotion'],
             'niveau_difficulte' => $validated['niveau_difficulte'],
             'latitude_depart' => $validated['latitude'],
@@ -291,12 +278,44 @@ class GameController extends Controller
         );
     }
 
+    /**
+     * Termine la partie de force (appelé par le timer frontend).
+     */
+    public function forceEnd(Game $game)
+    {
+        $this->ensureGameOwner($game);
+        
+        if ($game->statut !== 'terminee') {
+            $game->update([
+                'statut' => 'terminee',
+                'date_fin' => now(),
+                'duree_restante' => 0
+            ]);
+        }
+
+        return redirect()
+            ->route('dashboard')
+            ->with('info', 'Le temps est écoulé ! Votre partie a été clôturée.');
+    }
+
     public function pauseGame(Game $game)
     {
         $this->ensureGameOwner($game);
         abort_unless($game->statut === 'en_cours', 403);
 
-        $game->update(['statut' => 'pause']);
+        // Calculer le temps écoulé depuis le début ou la dernière reprise
+        $dateDebut = $game->date_debut;
+        $now = now();
+        $secondesEcoulees = $now->diffInSeconds($dateDebut);
+
+        // Mettre à jour la durée restante
+        $nouvelleDureeRestante = max(0, $game->duree_restante - $secondesEcoulees);
+
+        $game->update([
+            'statut' => 'pause',
+            'duree_restante' => $nouvelleDureeRestante,
+            'date_fin' => $now, // Utiliser date_fin pour stocker le moment de la pause
+        ]);
 
         return redirect()
             ->route('dashboard')
@@ -409,6 +428,18 @@ class GameController extends Controller
             'date_resolution' => now(),
         ]);
 
+        $user = auth()->user();
+
+        // Ajout de l'XP pour la résolution
+        $xpGagnes = 20; // Points de base par lieu découvert
+        $user->increment('xp', $xpGagnes);
+
+        // Optionnel : Gestion des niveaux (tous les 100 XP par exemple)
+        $nouveauNiveau = floor($user->xp / 100) + 1;
+        if ($nouveauNiveau > $user->level) {
+            $user->update(['level' => $nouveauNiveau]);
+        }
+
         Validation::create([
             'game_id' => $game->id,
             'place_id' => $place->id,
@@ -419,7 +450,10 @@ class GameController extends Controller
             'date_validation' => now(),
         ]);
 
-        return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigme, 'success'));
+        return $this->redirectToPlayEnigme($game, array_merge(
+            $this->modalLieuDonnees($enigme, 'success'),
+            ['xp_gagnes' => $xpGagnes]
+        ));
     }
 
     public function skipEnigme(Game $game, Enigme $enigme)
@@ -577,7 +611,10 @@ class GameController extends Controller
         $game->load('environment');
 
         if ($game->statut === 'pause') {
-            $game->update(['statut' => 'en_cours']);
+            $game->update([
+                'statut' => 'en_cours',
+                'date_debut' => now(), // On remet date_debut à maintenant pour recommencer le calcul
+            ]);
             $game->refresh();
         }
 

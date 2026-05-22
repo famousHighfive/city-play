@@ -12,6 +12,7 @@ const props = defineProps({
 const audioStore = useAudioStore();
 
 const currentPhase = ref('loading');
+const showContinueButton = ref(false);
 const loadingProgress = ref(0);
 const currentLoadingMessage = ref('Initialisation du système d’exploration...');
 const firstPlaceActive = ref(false);
@@ -73,15 +74,20 @@ onMounted(async () => {
         await nextTick();
         
         setTimeout(() => {
-            currentPhase.value = 'map';
-            nextTick(() => {
-                setTimeout(() => {
-                    firstPlaceActive.value = true;
-                }, 1000);
-            });
+            currentLoadingMessage.value = 'Préparation terminée !';
+            showContinueButton.value = true;
         }, 500);
     }, 10000);
 });
+
+const handleContinue = () => {
+    currentPhase.value = 'map';
+    nextTick(() => {
+        setTimeout(() => {
+            firstPlaceActive.value = true;
+        }, 1000);
+    });
+};
 
 onUnmounted(() => {
     if (loadingInterval) clearInterval(loadingInterval);
@@ -126,7 +132,17 @@ onUnmounted(() => {
                     
                     <!-- Loading message -->
                     <div class="h-16 flex items-center justify-center text-center">
-                        <p class="text-lg text-slate-200 font-medium animate-pulse">{{ currentLoadingMessage }}</p>
+                        <p v-if="!showContinueButton" class="text-lg text-slate-200 font-medium animate-pulse">{{ currentLoadingMessage }}</p>
+                        
+                        <button 
+                            v-else
+                            @click="handleContinue"
+                            class="group relative px-8 py-4 bg-gradient-to-r from-indigo-600 to-emerald-500 rounded-2xl text-white font-bold text-lg shadow-2xl hover:scale-105 transition-all duration-300 flex items-center gap-3 overflow-hidden"
+                        >
+                            <span class="relative z-10">Cliquer pour continuer</span>
+                            <span class="relative z-10 animate-bounce">👉</span>
+                            <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -173,33 +189,28 @@ onUnmounted(() => {
                     </div>
                     
                     <!-- Bottom instruction -->
-                    <div class="absolute bottom-0 left-0 right-0 p-8 pointer-events-auto">
-                        <div class="max-w-2xl mx-auto">
+                    <div class="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
+                        <div class="max-w-md w-full pointer-events-auto">
                             <Transition name="slide-up">
                                 <div v-if="firstPlaceActive" 
-                                     class="bg-gradient-to-r from-emerald-600 to-teal-500 rounded-2xl p-6 shadow-2xl border border-emerald-400/30">
-                                    <div class="flex items-center gap-4">
-                                        <div class="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur">
-                                            <span class="text-3xl animate-pulse">🎯</span>
-                                        </div>
-                                        <div class="flex-1">
-                                            <h3 class="text-xl font-bold text-white mb-1">Votre aventure commence !</h3>
-                                            <p class="text-emerald-100/90">Cliquez sur le point lumineux pour commencer votre exploration.</p>
-                                        </div>
-                                        <div class="hidden sm:block">
-                                            <button 
-                                                @click="startGame"
-                                                class="px-6 py-3 bg-white text-emerald-600 rounded-xl font-bold text-sm hover:scale-105 transition-transform shadow-lg"
-                                            >
-                                                Commencer →
-                                            </button>
-                                        </div>
+                                     class="bg-slate-900/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/10 text-center">
+                                    <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-600 to-emerald-500 flex items-center justify-center shadow-2xl mx-auto mb-6">
+                                        <span class="text-4xl animate-pulse">🎯</span>
                                     </div>
+                                    <h3 class="text-2xl font-black text-white mb-3">Bienvenue sur votre trajet !</h3>
+                                    <p class="text-slate-300 mb-8 leading-relaxed">Voici le parcours que vous allez découvrir. Cliquez sur le premier lieu déverrouillé (point lumineux) pour lancer l'aventure.</p>
+                                    <button 
+                                        @click="startGame"
+                                        class="w-full px-8 py-4 bg-gradient-to-r from-indigo-600 to-emerald-500 text-white rounded-2xl font-black text-lg hover:scale-105 transition-all shadow-xl shadow-indigo-500/20"
+                                    >
+                                        Commencer l'exploration →
+                                    </button>
                                 </div>
                             </Transition>
                         </div>
                     </div>
                 </div>
+
             </div>
         </Transition>
     </div>

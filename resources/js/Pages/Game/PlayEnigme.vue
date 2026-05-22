@@ -42,6 +42,7 @@ const toast = useToast();
 const showPlan = ref(false);
 const showModal = ref(false);
 const modalLieu = ref(null);
+const xpGagnes = ref(0);
 const showGameEndModal = ref(false);
 const gpsLoading = ref(false);
 const indiceLoading = ref(false);
@@ -50,8 +51,22 @@ const skipLoading = ref(false);
 const gpsError = ref(props.gps_error);
 const page = usePage();
 
-const timerDisplay = computed(() => gameStore.formattedTime);
-const remainingSeconds = computed(() => gameStore.remainingSeconds);
+// Initialisation du temps restant en secondes (récupéré du backend)
+const remainingSeconds = ref(Number(props.game.duree_restante ?? 0));
+
+// Formatage du temps pour l'affichage (ex: "15 min 04s")
+const timerDisplay = computed(() => {
+    if (remainingSeconds.value <= 0) return "Temps écoulé";
+    
+    const hours = Math.floor(remainingSeconds.value / 3600);
+    const minutes = Math.floor((remainingSeconds.value % 3600) / 60);
+    const seconds = remainingSeconds.value % 60;
+    
+    if (hours > 0) {
+        return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+    }
+    return `${minutes} min ${seconds.toString().padStart(2, '0')}s`;
+});
 
 const locomotionLabel = computed(() =>
     props.labels?.moyens_locomotion?.[props.game.moyen_locomotion] ?? props.game.moyen_locomotion
@@ -73,6 +88,7 @@ const rayon = computed(() => Number(lieuValidation.value?.rayon_validation ?? 30
 const ouvrirModal = async (data) => {
     if (!data?.nom) return;
     modalLieu.value = data;
+    xpGagnes.value = data.xp_gagnes || 0;
     await nextTick();
     showModal.value = true;
     if (data.type === 'success') {
@@ -106,6 +122,8 @@ watch(
 const handleTimeUp = () => {
     showGameEndModal.value = true;
     audioStore.play('notification');
+    // Forcer la clôture côté serveur
+    router.post(route('game.force-end', props.game.id));
 };
 
 const routeParams = () => ({
@@ -230,16 +248,30 @@ onUnmounted(() => {
 const peutValiderGps = computed(() => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee);
 const peutVoirSolution = computed(() => props.enigme.pivot.statut === 'en_cours' && !props.enigme.pivot.solution_affichee);
 const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours' || props.enigme.pivot.solution_affichee);
+
+const backgroundImage = computed(() => {
+    if (props.enigme.image) {
+        return `/storage/${props.enigme.image}`;
+    }
+    return 'https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExNjducnN2aGY3cDZuZ2NicHNzMnlmOW1mcWZ1NnV0NWx5bXlxcTcyNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l41lHnkHmdFgjUnmw/giphy.gif';
+});
 </script>
 
 <template>
     <Head :title="`Partie - ${game.environment?.nom ?? 'City Play'}`" />
 
     <AuthenticatedLayout>
-        <div class="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 py-12">
-            <div class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 space-y-6">
+        <div 
+            class="min-h-screen bg-cover bg-center bg-fixed relative"
+            :style="{ backgroundImage: `url(${backgroundImage})` }"
+        >
+            <!-- Overlay pour la lisibilité -->
+            <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px]"></div>
+
+            <div class="relative z-10 py-12">
+                <div class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 space-y-6">
                 <!-- Header -->
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl shadow-lg border border-white/20">
                     <div class="flex items-center gap-4">
                         <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg">
                             <span class="text-2xl">🎮</span>
@@ -277,7 +309,7 @@ const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours
                 </div>
 
                 <!-- Timer -->
-                <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <div class="bg-white/80 backdrop-blur-md rounded-2xl shadow-lg border border-white/20 p-6">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
@@ -301,16 +333,7 @@ const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours
                 </div>
 
                 <!-- Enigma Card -->
-                <div class="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-                    <!-- Enigma Image -->
-                    <div v-if="enigme.image" class="h-64 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
-                        <img
-                            :src="'/storage/' + enigme.image"
-                            alt="Illustration"
-                            class="w-full h-full object-cover"
-                        />
-                    </div>
-                    
+                <div class="bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-white/20 overflow-hidden">
                     <div class="p-8 space-y-8">
                         <!-- Enigma Text -->
                         <div>
@@ -410,8 +433,9 @@ const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- PrimeVue Components -->
+    <!-- PrimeVue Components -->
         <ConfirmDialog />
         <Toast position="top-right" />
 
@@ -478,7 +502,10 @@ const peutPasserSuivant = computed(() => props.enigme.pivot.statut !== 'en_cours
                                 <h2 class="text-3xl font-black bg-gradient-to-r from-green-600 to-emerald-700 bg-clip-text text-transparent">
                                     Félicitations !
                                 </h2>
-                                <p class="text-sm text-gray-500 mt-3">
+                                <div v-if="xpGagnes > 0" class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-black animate-bounce">
+                                    ✨ +{{ xpGagnes }} XP gagnés
+                                </div>
+                                <p class="text-sm text-gray-500 mt-2">
                                     Vous avez trouvé le bon endroit.
                                 </p>
                             </div>

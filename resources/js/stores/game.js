@@ -21,17 +21,6 @@ export const useGameStore = defineStore('game', () => {
         remainingSeconds.value = data.remainingSeconds;
         isTimerActive.value = data.isTimerActive;
         pausedAt.value = data.pausedAt;
-        
-        // If the game was paused, calculate how much time has passed and resume automatically
-        if (isPaused.value && pausedAt.value) {
-          const now = Date.now();
-          const pausedDuration = Math.floor((now - pausedAt.value) / 1000);
-          if (pausedDuration > 0) {
-            remainingSeconds.value = Math.max(0, remainingSeconds.value - pausedDuration);
-            isPaused.value = false;
-            pausedAt.value = null;
-          }
-        }
       } catch (e) {
         console.error('Erreur lors du chargement du jeu depuis localStorage:', e);
       }
@@ -50,10 +39,10 @@ export const useGameStore = defineStore('game', () => {
     localStorage.setItem('cityplay_game', JSON.stringify(data));
   };
 
-  // Initialiser le jeu
-  const initializeGame = (id, durationMinutes) => {
+  // Initialiser le jeu avec le temps en secondes provenant du backend
+  const initializeGame = (id, durationSeconds) => {
     gameId.value = id;
-    remainingSeconds.value = durationMinutes * 60;
+    remainingSeconds.value = durationSeconds;
     isPaused.value = false;
     pausedAt.value = null;
     isTimerActive.value = true;
