@@ -51,21 +51,20 @@ const skipLoading = ref(false);
 const gpsError = ref(props.gps_error);
 const page = usePage();
 
-// Initialisation du temps restant en secondes (récupéré du backend)
-const remainingSeconds = ref(Number(props.game.duree_restante ?? 0));
-
 // Formatage du temps pour l'affichage (ex: "15 min 04s")
 const timerDisplay = computed(() => {
-    if (remainingSeconds.value <= 0) return "Temps écoulé";
+    const totalSeconds = gameStore.remainingSeconds;
+    if (totalSeconds <= 0) return "00:00:00";
     
-    const hours = Math.floor(remainingSeconds.value / 3600);
-    const minutes = Math.floor((remainingSeconds.value % 3600) / 60);
-    const seconds = remainingSeconds.value % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
     
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
-    }
-    return `${minutes} min ${seconds.toString().padStart(2, '0')}s`;
+    return [
+        hours.toString().padStart(2, '0'),
+        minutes.toString().padStart(2, '0'),
+        seconds.toString().padStart(2, '0')
+    ].join(':');
 });
 
 const locomotionLabel = computed(() =>
@@ -93,6 +92,14 @@ const ouvrirModal = async (data) => {
     showModal.value = true;
     if (data.type === 'success') {
         audioStore.play('success');
+        if (xpGagnes.value > 0) {
+            toast.add({
+                severity: 'success',
+                summary: 'Félicitations !',
+                detail: `Lieu découvert. +${xpGagnes.value} XP`,
+                life: 4000
+            });
+        }
     } else {
         audioStore.play('notification');
     }
@@ -229,12 +236,18 @@ const retourDashboardApresFin = () => {
 };
 
 onMounted(() => {
+    // Toujours s'assurer que le timer est synchronisé avec l'ID de la partie actuelle
     if (gameStore.gameId !== props.game.id) {
         gameStore.initializeGame(
             props.game.id,
-            props.game.duree_restante ?? props.game.duree_prevue
+            props.game.duree_restante
         );
     } else {
+        // Si on revient sur la même partie, on s'assure qu'elle n'est pas en pause localement
+        // si le statut backend est "en_cours"
+        if (props.game.statut === 'en_cours') {
+            gameStore.isPaused = false;
+        }
         gameStore.startTimer();
     }
 

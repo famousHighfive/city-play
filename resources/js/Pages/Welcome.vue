@@ -29,7 +29,7 @@ defineProps({
         <div class="fixed inset-0 z-0 overflow-hidden">
             <!-- REMPLACEZ L'URL CI-DESSOUS PAR VOTRE GIF OU VIDÉO -->
             <img 
-                src="https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMGN4Z2w0c3M0MnNsdTYzZGRtenIxdGx3YXhrcjdhcWxqZWxxZHY2cyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o6Ztm62DeSStT0gCY/giphy.gif" 
+                src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMmh2ZmI4bHhpNDN2bWIwcmIycDAyaGtlbG51NG9mdHN6d2ppcXVsdyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/7DUP9L3011BuHanfDs/giphy.gif" 
                 alt="Adventure Background" 
                 class="w-full h-full object-cover scale-105 transition-transform duration-1000"
             />

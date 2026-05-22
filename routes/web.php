@@ -73,6 +73,7 @@ Route::middleware(['auth', 'verified', 'admin'])->group(function () {
     Route::resource('environments', EnvironmentController::class);
     Route::resource('places', PlaceController::class);
     Route::resource('enigmes', EnigmeController::class);
+    Route::resource('events', \App\Http\Controllers\PlannedEventController::class);
 
     Route::get('/environments/{environment}/invitations', [InvitationController::class, 'index'])
         ->name('invitations.index');
@@ -121,6 +122,12 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
 ])->name('game.validate.position');
     Route::post('/game/{game}/pause', [GameController::class, 'pauseGame'])
         ->name('game.pause');
+
+    Route::get('/game/{game}/finish', [GameController::class, 'finish'])
+        ->name('game.finish');
+
+    Route::post('/game/{game}/force-end', [GameController::class, 'forceEnd'])
+        ->name('game.force-end');
 });
 
 /*
@@ -135,6 +142,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+});
 /*
 |--------------------------------------------------------------------------
 | INVITATIONS PUBLIQUES
@@ -164,7 +172,7 @@ Route::prefix('invitation')
             ->name('show');
     });
 
-});
+
 
 /*
 |--------------------------------------------------------------------------

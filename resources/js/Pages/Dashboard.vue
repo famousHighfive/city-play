@@ -210,6 +210,52 @@ const strokeDashoffset = computed(() => {
                 </div>
 
                 <!-- ÉVÉNEMENTS PLANIFIÉS -->
+                <div class="space-y-6">
+                    <div class="flex items-center gap-2 text-slate-400">
+                        <span class="flex h-2 w-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        </span>
+                        <h3 class="text-xs font-black uppercase tracking-widest text-slate-400">Événements communautaires (Parties Publiques)</h3>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        <!-- MOCK DATA FOR EVENTS -->
+                        <div v-for="i in 3" :key="i" class="group bg-gradient-to-br from-indigo-900/40 to-slate-900/40 backdrop-blur-md rounded-3xl p-1 border border-indigo-500/20 overflow-hidden transition-all duration-500 hover:border-indigo-500/50 hover:-translate-y-2 shadow-2xl">
+                            <div class="p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-[10px] font-black text-indigo-300 uppercase tracking-tighter">
+                                        {{ i === 1 ? 'Demain à 14:00' : (i === 2 ? 'Samedi à 10:00' : 'Dimanche à 15:30') }}
+                                    </div>
+                                    <div class="flex items-center gap-1 text-amber-400 text-xs font-black">
+                                        <span>+{{ 50 * i }}</span>
+                                        <span class="text-[10px]">XP Bonus</span>
+                                    </div>
+                                </div>
+                                
+                                <h4 class="text-xl font-black text-white mb-2 group-hover:text-indigo-300 transition-colors">
+                                    {{ i === 1 ? 'Grande Chasse au Trésor' : (i === 2 ? 'Exploration Urbaine' : 'Défi de la Vieille Ville') }}
+                                </h4>
+                                <p class="text-xs text-slate-400 line-clamp-2 mb-6 leading-relaxed">
+                                    {{ i === 1 ? 'Rejoignez-nous pour une aventure épique à travers les monuments historiques.' : (i === 2 ? 'Découvrez les secrets cachés des ruelles sombres de la cité.' : 'Serez-vous assez rapide pour résoudre toutes les énigmes ?') }}
+                                </p>
+                                
+                                <div class="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-white/5 border border-white/5">
+                                    <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-xl shadow-inner">📍</div>
+                                    <div>
+                                        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Lieu de rdv</p>
+                                        <p class="text-sm font-bold text-slate-200">{{ i === 1 ? 'Centre Ville' : (i === 2 ? 'Quartier Latin' : 'Port Autonome') }}</p>
+                                    </div>
+                                </div>
+                                
+                                <button disabled class="w-full py-3 bg-slate-800 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest cursor-not-allowed border border-slate-700">
+                                    S'inscrire (Bientôt disponible)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div v-if="evenements.length > 0" class="space-y-6">
                     <div class="flex items-center gap-2 text-slate-400">
                         <span class="flex h-2 w-2 relative">

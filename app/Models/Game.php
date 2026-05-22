@@ -12,6 +12,7 @@ class Game extends Model
         'date_debut',
         'date_fin',
         'statut',
+        'nb_pauses',
         'mode_jeu',
         'nb_membres',
         'participants',

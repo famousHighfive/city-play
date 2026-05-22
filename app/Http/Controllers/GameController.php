@@ -298,6 +298,38 @@ class GameController extends Controller
             ->with('info', 'Le temps est écoulé ! Votre partie a été clôturée.');
     }
 
+    public function finish(Game $game)
+    {
+        $this->ensureGameOwner($game);
+
+        // Calculer le temps total écoulé
+        $dureeTotaleSecondes = ($game->duree_prevue * 60) - $game->duree_restante;
+
+        $stats = [
+            'temps_total' => $this->formatDuration($dureeTotaleSecondes),
+            'nb_pauses' => $game->nb_pauses,
+            'enigmes_resolues' => $game->enigmes()->wherePivot('statut', 'resolue')->count(),
+            'total_enigmes' => $game->enigmes()->count(),
+        ];
+
+        return Inertia::render('Game/Finish', [
+            'game' => $game->load('environment'),
+            'stats' => $stats,
+        ]);
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        $h = floor($seconds / 3600);
+        $m = floor(($seconds % 3600) / 60);
+        $s = $seconds % 60;
+
+        if ($h > 0) {
+            return sprintf('%dh %02dm %02ds', $h, $m, $s);
+        }
+        return sprintf('%dm %02ds', $m, $s);
+    }
+
     public function pauseGame(Game $game)
     {
         $this->ensureGameOwner($game);
@@ -313,6 +345,7 @@ class GameController extends Controller
 
         $game->update([
             'statut' => 'pause',
+            'nb_pauses' => $game->nb_pauses + 1,
             'duree_restante' => $nouvelleDureeRestante,
             'date_fin' => $now, // Utiliser date_fin pour stocker le moment de la pause
         ]);
@@ -430,14 +463,24 @@ class GameController extends Controller
 
         $user = auth()->user();
 
-        // Ajout de l'XP pour la résolution
-        $xpGagnes = 20; // Points de base par lieu découvert
-        $user->increment('xp', $xpGagnes);
+        // Vérifier si le lieu a déjà été découvert par ce joueur (attribution unique)
+        $dejaDecouvert = Validation::where('place_id', $place->id)
+            ->where('bonne_reponse', true)
+            ->whereHas('game', function($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })
+            ->exists();
 
-        // Optionnel : Gestion des niveaux (tous les 100 XP par exemple)
-        $nouveauNiveau = floor($user->xp / 100) + 1;
-        if ($nouveauNiveau > $user->level) {
-            $user->update(['level' => $nouveauNiveau]);
+        $xpGagnes = 0;
+        if (!$dejaDecouvert) {
+            $xpGagnes = 50; 
+            $user->increment('xp', $xpGagnes);
+
+            // Gestion des niveaux (tous les 100 XP)
+            $nouveauNiveau = floor($user->xp / 100) + 1;
+            if ($nouveauNiveau > $user->level) {
+                $user->update(['level' => $nouveauNiveau]);
+            }
         }
 
         Validation::create([
@@ -449,6 +492,27 @@ class GameController extends Controller
             'bonne_reponse' => true,
             'date_validation' => now(),
         ]);
+
+        // Vérifier s'il reste des énigmes à faire
+        $resteDesEnigmes = $game->enigmes()
+            ->wherePivotIn('statut', ['a_faire', 'en_cours'])
+            ->exists();
+
+        if (!$resteDesEnigmes) {
+            // Mettre à jour la durée restante une dernière fois
+            $dateDebut = $game->date_debut;
+            $now = now();
+            $secondesEcoulees = $now->diffInSeconds($dateDebut);
+            $nouvelleDureeRestante = max(0, $game->duree_restante - $secondesEcoulees);
+
+            $game->update([
+                'statut' => 'terminee',
+                'date_fin' => $now,
+                'duree_restante' => $nouvelleDureeRestante,
+            ]);
+
+            return redirect()->route('game.finish', $game);
+        }
 
         return $this->redirectToPlayEnigme($game, array_merge(
             $this->modalLieuDonnees($enigme, 'success'),
@@ -478,16 +542,23 @@ class GameController extends Controller
 
         if ($nextEnigme) {
             $game->enigmes()->updateExistingPivot($nextEnigme->id, ['statut' => 'en_cours']);
+        } else {
+            // Mettre à jour la durée restante une dernière fois
+            $dateDebut = $game->date_debut;
+            $now = now();
+            $secondesEcoulees = $now->diffInSeconds($dateDebut);
+            $nouvelleDureeRestante = max(0, $game->duree_restante - $secondesEcoulees);
 
-            return $this->redirectToPlayEnigme($game);
+            $game->update([
+                'statut' => 'terminee',
+                'date_fin' => $now,
+                'duree_restante' => $nouvelleDureeRestante,
+            ]);
+
+            return redirect()->route('game.finish', $game);
         }
 
-        $game->update([
-            'statut' => 'terminee',
-            'date_fin' => now(),
-        ]);
-
-        return to_route('dashboard')->with('success', 'Félicitations, vous avez terminé l\'environnement !');
+        return $this->redirectToPlayEnigme($game);
     }
 
     private function authorizePlayerEnvironment(Environment $environment): void
