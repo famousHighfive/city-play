@@ -7,6 +7,7 @@ use App\Models\Validation;
 use Illuminate\Http\Request;
 use App\Models\Enigme;
 use Inertia\Inertia;
+use App\Services\GamePathService;
 use App\Models\Environment;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -21,21 +22,7 @@ class GameController extends Controller
             ? Environment::where('actif', true)->get()
             : $user->environmentsAccessibles();
 
-        $gamesQuery = Game::where('user_id', $user->id)
-            ->when(! $user->isAdmin(), function ($query) use ($user) {
-                $query->whereIn(
-                    'environment_id',
-                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
-                );
-            })
-            ->with(['environment', 'enigmes'])
-            ->latest();
-
-        $games = $gamesQuery->get()->map(function (Game $game) {
-            $this->synchroniserStatutPartie($game);
-
-            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
-        });
+        $games = $this->chargerPartiesJoueur();
 
         $partiesReprendables = $games
             ->filter(fn (array $partie) => $partie['peut_reprendre'])
@@ -66,6 +53,8 @@ class GameController extends Controller
             'parties_en_cours' => $games->where('peut_reprendre', true)->count(),
             'enigmes_resolues' => $games->sum('progression.resolues'),
             'enigmes_total' => $games->sum('progression.total'),
+            'xp' => $user->xp,
+            'level' => $user->level,
         ];
 
         if ($stats['enigmes_total'] > 0) {
@@ -76,10 +65,31 @@ class GameController extends Controller
             $stats['pourcentage_global'] = 0;
         }
 
+        // Récupérer les événements planifiés à venir
+        $evenements = \App\Models\PlannedEvent::where('actif', true)
+            ->where('date_evenement', '>=', now())
+            ->with('environment')
+            ->orderBy('date_evenement', 'asc')
+            ->get();
+
         return Inertia::render('Dashboard', [
             'environments' => $environmentsAvecPartie,
             'games' => $games->values(),
             'stats' => $stats,
+            'labels' => $this->dashboardLabels(),
+            'evenements' => $evenements,
+        ]);
+    }
+
+    /**
+     * Historique complet : toutes les parties du joueur (aucune suppression à l'affichage).
+     */
+    public function history()
+    {
+        $games = $this->chargerHistoriqueJoueur();
+
+        return Inertia::render('Game/History', [
+            'games' => $games->values(),
             'labels' => $this->dashboardLabels(),
         ]);
     }
@@ -117,52 +127,29 @@ class GameController extends Controller
             'afficher_modal_mode' => $request->boolean('nouvelle'),
         ]);
     }
-
     public function startNewGame(Request $request, Environment $environment)
     {
         $this->authorizePlayerEnvironment($environment);
 
         $validated = $request->validate([
             'mode_jeu' => ['required', Rule::in(['equipe', 'challenge'])],
-            'duree_prevue' => 'required|integer|min:1',
-            'moyen_locomotion' => ['required', Rule::in(['pied', 'velo', 'voiture'])],
-            'niveau_difficulte' => ['required', Rule::in(['1', '2', '3', 'enfant'])],
-            'nb_membres' => 'required_if:mode_jeu,equipe|nullable|integer|min:1|max:10',
-            'participants' => 'nullable|array',
-            'participants.*' => 'required|email|distinct',
-            'challenger_email' => 'required_if:mode_jeu,challenge|nullable|email',
+            'nb_membres' => ['required_if:mode_jeu,equipe', 'integer', 'min:1'],
+            'participants' => ['nullable', 'array'],
+            'participants.*' => ['nullable', 'email'],
+            'challenger_email' => ['required_if:mode_jeu,challenge', 'nullable', 'email'],
+            'duree_prevue' => ['required', 'integer', 'min:1'],
+            'moyen_locomotion' => ['required', 'string'],
+            'niveau_difficulte' => ['required', 'string'],
+            'latitude' => ['required', 'numeric'],
+            'longitude' => ['required', 'numeric'],
         ]);
 
-        if ($validated['mode_jeu'] === 'equipe') {
-            $nbMembres = (int) $validated['nb_membres'];
-            $emailsCoEquipiers = array_values($validated['participants'] ?? []);
-            $nbCoEquipiersAttendu = max(0, $nbMembres - 1);
+        $nbMembres = $validated['mode_jeu'] === 'equipe' ? (int) $validated['nb_membres'] : 1;
+        $participants = $validated['mode_jeu'] === 'equipe' ? array_filter($validated['participants'] ?? []) : [];
 
-            if (count($emailsCoEquipiers) !== $nbCoEquipiersAttendu) {
-                throw ValidationException::withMessages([
-                    'participants' => $nbCoEquipiersAttendu === 0
-                        ? 'Aucun email supplémentaire n\'est requis lorsque vous jouez seul.'
-                        : "Indiquez {$nbCoEquipiersAttendu} email(s) pour vos coéquipiers.",
-                ]);
-            }
-
-            $captainEmail = auth()->user()->email;
-            $participants = $captainEmail
-                ? array_merge([$captainEmail], $emailsCoEquipiers)
-                : $emailsCoEquipiers;
-        } else {
-            $nbMembres = 1;
-            $participants = null;
-        }
-
-        $existingGame = Game::where('user_id', auth()->id())
-            ->where('environment_id', $environment->id)
-            ->where('statut', 'en_cours')
-            ->first();
-
-        if ($existingGame && $this->peutReprendrePartie($existingGame)) {
-            return to_route('game.resume', $existingGame->id);
-        }
+        // Conserver l'historique : on n'efface plus les parties terminées.
+        // On abandonne seulement les sessions encore ouvertes sur ce territoire.
+        $this->abandonnerPartiesActives(auth()->id(), $environment->id);
 
         $game = Game::create([
             'user_id' => auth()->id(),
@@ -176,34 +163,88 @@ class GameController extends Controller
                 ? $validated['challenger_email']
                 : null,
             'duree_prevue' => $validated['duree_prevue'],
-            'duree_restante' => $validated['duree_prevue'],
+            'duree_restante' => $validated['duree_prevue'] * 60, // Stocké en secondes pour précision
             'moyen_locomotion' => $validated['moyen_locomotion'],
             'niveau_difficulte' => $validated['niveau_difficulte'],
+            'latitude_depart' => $validated['latitude'],
+            'longitude_depart' => $validated['longitude'],
         ]);
+        
+        \Log::info('Game created!', ['game_id' => $game->id]);
 
-        $enigmes = $this->selectionnerEnigmes(
-            $environment,
-            (string) $validated['niveau_difficulte'],
-            $validated['moyen_locomotion'],
-            (int) $validated['duree_prevue'],
-        );
+        $parcours = app(GamePathService::class)
 
-        if ($enigmes->isEmpty()) {
+            ->construireParcours(
+
+                $environment,
+
+                $validated['latitude'],
+                $validated['longitude'],
+
+                $validated['niveau_difficulte'],
+
+                $validated['moyen_locomotion'],
+
+                (int) $validated['duree_prevue'],
+            );
+            
+        \Log::info('Parcours built!', ['count' => $parcours->count()]);
+
+        if ($parcours->isEmpty()) {
             $game->delete();
-
+            \Log::info('Parcours is empty! Deleting game and returning error.');
             return back()->with('error', 'Cette ville ne contient aucune énigme active pour le moment.');
         }
 
-        foreach ($enigmes as $index => $enigme) {
-            $game->enigmes()->attach($enigme->id, [
-                'ordre' => $index + 1,
-                'statut' => $index === 0 ? 'en_cours' : 'a_faire',
-                'nb_indices_demandes' => 0,
-                'solution_affichee' => false,
-            ]);
-        }
+        foreach ($parcours as $step) {
+            $game->enigmes()->attach(
 
-        return to_route('game.show', $game->id);
+                $step['enigme']->id,
+
+                [
+
+                    'ordre' => $step['ordre'],
+
+                    'statut' => $step['ordre'] === 1
+                        ? 'en_cours'
+                        : 'a_faire',
+
+                    'nb_indices_demandes' => 0,
+
+                    'solution_affichee' => false,
+                ]
+            );
+        }
+        
+        \Log::info('Enigmes attached to game!');
+
+        // Store parcours in session temporarily
+        $formattedParcours = $parcours->map(function ($step) {
+            return [
+                'latitude' => $step['place']->latitude,
+                'longitude' => $step['place']->longitude,
+            ];
+        })->values();
+        
+        session(['game_parcours' => $formattedParcours]);
+        \Log::info('Parcours stored in session!', ['parcours' => $formattedParcours]);
+
+        // Redirect to the immersive start sequence
+        \Log::info('Redirecting to start sequence!', ['route' => route('game.start-sequence', $game->id)]);
+        return to_route('game.start-sequence', $game->id);
+    }
+
+    public function startSequence(Game $game)
+    {
+        $this->ensureGameOwner($game);
+        
+        $parcours = session('game_parcours', []);
+        session()->forget('game_parcours');
+        
+        return Inertia::render('Game/GameStartSequence', [
+            'game' => $game,
+            'parcours' => $parcours,
+        ]);
     }
 
     public function resume(Game $game)
@@ -228,12 +269,44 @@ class GameController extends Controller
         );
     }
 
+    /**
+     * Termine la partie de force (appelé par le timer frontend).
+     */
+    public function forceEnd(Game $game)
+    {
+        $this->ensureGameOwner($game);
+        
+        if ($game->statut !== 'terminee') {
+            $game->update([
+                'statut' => 'terminee',
+                'date_fin' => now(),
+                'duree_restante' => 0
+            ]);
+        }
+
+        return redirect()
+            ->route('dashboard')
+            ->with('info', 'Le temps est écoulé ! Votre partie a été clôturée.');
+    }
+
     public function pauseGame(Game $game)
     {
         $this->ensureGameOwner($game);
         abort_unless($game->statut === 'en_cours', 403);
 
-        $game->update(['statut' => 'pause']);
+        // Calculer le temps écoulé depuis le début ou la dernière reprise
+        $dateDebut = $game->date_debut;
+        $now = now();
+        $secondesEcoulees = $now->diffInSeconds($dateDebut);
+
+        // Mettre à jour la durée restante
+        $nouvelleDureeRestante = max(0, $game->duree_restante - $secondesEcoulees);
+
+        $game->update([
+            'statut' => 'pause',
+            'duree_restante' => $nouvelleDureeRestante,
+            'date_fin' => $now, // Utiliser date_fin pour stocker le moment de la pause
+        ]);
 
         return redirect()
             ->route('dashboard')
@@ -346,6 +419,18 @@ class GameController extends Controller
             'date_resolution' => now(),
         ]);
 
+        $user = auth()->user();
+
+        // Ajout de l'XP pour la résolution
+        $xpGagnes = 20; // Points de base par lieu découvert
+        $user->increment('xp', $xpGagnes);
+
+        // Optionnel : Gestion des niveaux (tous les 100 XP par exemple)
+        $nouveauNiveau = floor($user->xp / 100) + 1;
+        if ($nouveauNiveau > $user->level) {
+            $user->update(['level' => $nouveauNiveau]);
+        }
+
         Validation::create([
             'game_id' => $game->id,
             'place_id' => $place->id,
@@ -356,7 +441,10 @@ class GameController extends Controller
             'date_validation' => now(),
         ]);
 
-        return $this->redirectToPlayEnigme($game, $this->modalLieuDonnees($enigme, 'success'));
+        return $this->redirectToPlayEnigme($game, array_merge(
+            $this->modalLieuDonnees($enigme, 'success'),
+            ['xp_gagnes' => $xpGagnes]
+        ));
     }
 
     public function skipEnigme(Game $game, Enigme $enigme)
@@ -393,9 +481,6 @@ class GameController extends Controller
         return to_route('dashboard')->with('success', 'Félicitations, vous avez terminé l\'environnement !');
     }
 
-    /**
-     * Un joueur ne peut configurer / jouer que sur un environnement invité.
-     */
     private function authorizePlayerEnvironment(Environment $environment): void
     {
         $user = auth()->user();
@@ -411,9 +496,6 @@ class GameController extends Controller
         );
     }
 
-    /**
-     * Options affichées dynamiquement dans ConfigureGame.vue.
-     */
     private function gameOptions(Environment $environment): array
     {
         $enigmesDisponibles = Enigme::whereHas('place', function ($query) use ($environment) {
@@ -447,12 +529,71 @@ class GameController extends Controller
                 ['value' => 'voiture', 'label' => 'Voiture', 'emoji' => '🚗'],
             ],
             'niveaux_difficulte' => [
-                ['value' => '1', 'label' => 'Facile', 'emoji' => '🟢'],
-                ['value' => '2', 'label' => 'Moyen', 'emoji' => '🟠'],
-                ['value' => '3', 'label' => 'Difficile', 'emoji' => '🔴'],
-                ['value' => 'enfant', 'label' => 'Enfant', 'emoji' => '🧒'],
+                ['value' => 'easy', 'label' => 'Facile', 'emoji' => '🟢'],
+                ['value' => 'medium', 'label' => 'Moyen', 'emoji' => '🟠'],
+                ['value' => 'hard', 'label' => 'Difficile', 'emoji' => '🔴'],
+                ['value' => 'kid', 'label' => 'Enfant', 'emoji' => '🧒'],
             ],
         ];
+    }
+
+    /**
+     * Parties affichées sur le dashboard (synthèse joueur).
+     */
+    private function chargerPartiesJoueur()
+    {
+        return $this->requetePartiesJoueur()->map(function (Game $game) {
+            $this->synchroniserStatutPartie($game);
+
+            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
+        });
+    }
+
+    /**
+     * Historique intégral : chaque aventure conservée en base, triée de la plus récente à la plus ancienne.
+     * Plusieurs parties sur le même territoire apparaissent toutes (terminées, abandonnées, en cours…).
+     */
+    private function chargerHistoriqueJoueur()
+    {
+        return $this->requetePartiesJoueur()->map(function (Game $game) {
+            $this->synchroniserStatutPartie($game);
+
+            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
+        });
+    }
+
+    /**
+     * Requête commune : toutes les lignes games du joueur, sans regroupement ni limite par territoire.
+     */
+    private function requetePartiesJoueur()
+    {
+        $user = auth()->user();
+
+        return Game::where('user_id', $user->id)
+            ->when(! $user->isAdmin(), function ($query) use ($user) {
+                $query->whereIn(
+                    'environment_id',
+                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
+                );
+            })
+            ->with(['environment', 'enigmes'])
+            ->orderByDesc('date_debut')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * Avant une nouvelle partie : clôturer les sessions en cours/pause sans supprimer les archives.
+     */
+    private function abandonnerPartiesActives(int $userId, int $environmentId): void
+    {
+        Game::where('user_id', $userId)
+            ->where('environment_id', $environmentId)
+            ->whereIn('statut', ['en_cours', 'pause'])
+            ->update([
+                'statut' => 'abandonnee',
+                'date_fin' => now(),
+            ]);
     }
 
     private function formaterPartiePourDashboard(Game $game): array
@@ -520,7 +661,10 @@ class GameController extends Controller
         $game->load('environment');
 
         if ($game->statut === 'pause') {
-            $game->update(['statut' => 'en_cours']);
+            $game->update([
+                'statut' => 'en_cours',
+                'date_debut' => now(), // On remet date_debut à maintenant pour recommencer le calcul
+            ]);
             $game->refresh();
         }
 
@@ -547,14 +691,30 @@ class GameController extends Controller
         }
 
         $totalEnigmes = $game->enigmes()->count();
+        
+        // Build parcours array with place coordinates
+        $parcours = $game->enigmes()
+            ->with('place')
+            ->orderByPivot('ordre')
+            ->get()
+            ->map(function ($enigme) {
+                return [
+                    'latitude' => $enigme->place->latitude,
+                    'longitude' => $enigme->place->longitude,
+                ];
+            })
+            ->values()
+            ->toArray();
 
         return Inertia::render('Game/PlayEnigme', [
             'game' => $game,
-            'enigme' => $this->enigmePourJoueur($currentEnigme),
+            'enigme' => $currentEnigme->load('place'),
             'progression' => [
                 'etape' => $currentEnigme->pivot->ordre,
                 'total' => $totalEnigmes,
             ],
+            'parcours' => $parcours,
+            'currentPlaceIndex' => $currentEnigme->pivot->ordre - 1,
             'labels' => $this->gameLabels(),
             'modal_lieu' => $modalLieu,
             'gps_error' => $gpsError,
@@ -629,10 +789,14 @@ class GameController extends Controller
 
     private function modalLieuDonnees(Enigme $enigme, string $type = 'solution'): array
     {
+        $place = $enigme->place;
+
         return [
             'type' => $type,
-            'nom' => $enigme->place->nom,
-            'description' => $enigme->place->description,
+            'nom' => $place->nom,
+            'description' => $place->description,
+            'recommandation' => $place->recommandation ?? [],
+            'ressource' => $place->ressource,
         ];
     }
 
@@ -711,10 +875,10 @@ class GameController extends Controller
                 'voiture' => '🚗 Voiture',
             ],
             'niveaux_difficulte' => [
-                '1' => '🟢 Facile',
-                '2' => '🟠 Moyen',
-                '3' => '🔴 Difficile',
-                'enfant' => '🧒 Enfant',
+                'easy' => '🟢 Facile',
+                'medium' => '🟠 Moyen',
+                'hard' => '🔴 Difficile',
+                'kid' => '🧒 Enfant',
             ],
             'modes' => [
                 'equipe' => '👥 Équipe',
@@ -723,6 +887,7 @@ class GameController extends Controller
         ];
     }
 
+    // public function validatePosition(Request $request, Game $game
     /**
      * Nombre d'énigmes selon durée et locomotion (instructions projet).
      */
@@ -780,23 +945,146 @@ class GameController extends Controller
         string $moyenLocomotion,
         int $dureePrevue,
     ) {
-        $query = Enigme::whereHas('place', function ($q) use ($environment) {
-            $q->where('environment_id', $environment->id);
-        })
-            ->where('actif', true)
-            ->with('place');
 
-        $enigmes = (clone $query)->where('niveau', $niveauDifficulte)->get();
+        $request->validate([
 
-        if ($enigmes->isEmpty()) {
-            $enigmes = $query->get();
+            'latitude' => [
+                'required',
+                'numeric'
+            ],
+
+            'longitude' => [
+                'required',
+                'numeric'
+            ],
+
+            'enigme_id' => [
+                'required',
+                'exists:enigmes,id'
+            ],
+
+        ]);
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Récupération énigme + lieu
+        |--------------------------------------------------------------------------
+        */
+
+        $enigme = Enigme::with('place')
+            ->findOrFail(
+                $request->enigme_id
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Calcul distance GPS
+        |--------------------------------------------------------------------------
+        */
+
+        $distance = app(GamePathService::class)
+            ->calculerDistance(
+
+                $request->latitude,
+                $request->longitude,
+
+                $enigme->place->latitude,
+                $enigme->place->longitude
+
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Vérification rayon GPS
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $distance >
+            $enigme->place->rayon_validation
+        ) {
+
+            return back()->with(
+                'error',
+                'Vous êtes trop loin du lieu.'
+            );
+
         }
 
-        $limite = $this->nombreEnigmesPourPartie($moyenLocomotion, $dureePrevue);
 
-        return $enigmes
-            ->sortBy(fn (Enigme $e) => $e->place_id)
-            ->take($limite)
-            ->values();
+        /*
+        |--------------------------------------------------------------------------
+        | Marquer énigme résolue
+        |--------------------------------------------------------------------------
+        */
+
+        $game->enigmes()
+            ->updateExistingPivot(
+                $enigme->id,
+                [
+
+                    'statut' => 'resolue',
+
+                    'resolue_at' => now(),
+
+                ]
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Chercher prochaine énigme
+        |--------------------------------------------------------------------------
+        */
+
+        $nextEnigme = $game->enigmes()
+
+            ->wherePivot(
+                'statut',
+                'en_attente'
+            )
+
+            ->orderByPivot('ordre')
+
+            ->first();
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Si plus d'énigme
+        |--------------------------------------------------------------------------
+        */
+
+        if (!$nextEnigme) {
+
+            $game->update([
+                'statut' => 'terminee'
+            ]);
+
+            return redirect()
+                ->route(
+                    'game.finish',
+                    $game->id
+                );
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Sinon retour jeu
+        |--------------------------------------------------------------------------
+        */
+
+        return redirect()
+            ->route(
+                'game.show',
+                $game->id
+            );
+
     }
+
 }

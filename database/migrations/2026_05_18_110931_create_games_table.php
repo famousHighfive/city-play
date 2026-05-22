@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -15,12 +14,12 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('user_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->foreignId('environment_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->timestamp('date_debut');
 
@@ -40,9 +39,12 @@ return new class extends Migration
 
             $table->integer('duree_restante')->nullable();
 
+            $table->decimal('latitude_depart', 10, 7)->nullable();
+            $table->decimal('longitude_depart', 10, 7)->nullable();
+
             $table->enum('moyen_locomotion', ['pied', 'velo', 'voiture']);
 
-            $table->enum('niveau_difficulte', ['1', '2', '3', 'enfant']);
+            $table->enum('niveau_difficulte', ['easy', 'medium', 'hard', 'kid']);
 
             $table->timestamps();
         });

@@ -7,7 +7,18 @@ import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import 'leaflet/dist/leaflet.css';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+// Import PrimeVue et Pinia
+import PrimeVue from 'primevue/config';
+import Aura from '@primevue/themes/aura';
+import ConfirmationService from 'primevue/confirmationservice';
+import ToastService from 'primevue/toastservice';
+import 'primeicons/primeicons.css';
+import { createPinia } from 'pinia';
+
+// Créer l'instance Pinia
+const pinia = createPinia();
+
+const appName = import.meta.env.VITE_APP_NAME || 'city-play';
 
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
@@ -20,6 +31,14 @@ createInertiaApp({
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)
+            .use(pinia)
+            .use(PrimeVue, {
+                theme: {
+                    preset: Aura
+                }
+            })
+            .use(ConfirmationService)
+            .use(ToastService)
             .mount(el);
     },
     progress: {

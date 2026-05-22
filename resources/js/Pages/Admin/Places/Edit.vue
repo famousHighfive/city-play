@@ -18,9 +18,21 @@ const form = useForm({
     nom: props.place.nom,
     latitude: props.place.latitude,
     longitude: props.place.longitude,
-    description: props.place.description,
+    description: props.place.description ?? '',
+    recommandation: Array.isArray(props.place.recommandation)
+        ? props.place.recommandation.map((r) => ({ nom: r.nom ?? '', description: r.description ?? '' }))
+        : [],
+    ressource: props.place.ressource ?? '',
     rayon_validation: props.place.rayon_validation,
 });
+
+const ajouterRecommandation = () => {
+    form.recommandation.push({ nom: '', description: '' });
+};
+
+const retirerRecommandation = (index) => {
+    form.recommandation.splice(index, 1);
+};
 
 const submit = () => {
     form.put(route('places.update', props.place.id));
@@ -131,6 +143,46 @@ const submit = () => {
                                 <div v-if="form.errors.description" class="mt-1 text-sm text-red-600">
                                     {{ form.errors.description }}
                                 </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Recommandations</label>
+                                        <p class="text-xs text-gray-500 mt-1">Lieux conseillés autour de cette place</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        @click="ajouterRecommandation"
+                                        class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                                    >
+                                        + Ajouter
+                                    </button>
+                                </div>
+                                <div
+                                    v-for="(rec, index) in form.recommandation"
+                                    :key="index"
+                                    class="border rounded-lg p-4 space-y-2 bg-gray-50"
+                                >
+                                    <div class="flex justify-between">
+                                        <span class="text-xs text-gray-500">Lieu #{{ index + 1 }}</span>
+                                        <button type="button" @click="retirerRecommandation(index)" class="text-xs text-red-600">Retirer</button>
+                                    </div>
+                                    <input v-model="rec.nom" type="text" placeholder="Nom" class="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" />
+                                    <input v-model="rec.description" type="text" placeholder="Précision (optionnel)" class="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="ressource" class="block text-sm font-medium text-gray-700">Plus d'infos (contact)</label>
+                                <input
+                                    id="ressource"
+                                    v-model="form.ressource"
+                                    type="tel"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                    placeholder="Ex: +229 97 00 00 00"
+                                />
+                                <div v-if="form.errors.ressource" class="mt-1 text-sm text-red-600">{{ form.errors.ressource }}</div>
                             </div>
 
                             <div>

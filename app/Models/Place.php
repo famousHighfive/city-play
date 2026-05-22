@@ -10,6 +10,8 @@ class Place extends Model
         'environment_id',
         'nom',
         'description',
+        'recommandation',
+        'ressource',
         'latitude',
         'longitude',
         'rayon_validation',
@@ -18,6 +20,13 @@ class Place extends Model
         'is_active',
         'image_principale',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'recommandation' => 'array',
+        ];
+    }
 
     public function environment()
     {

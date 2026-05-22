@@ -83,7 +83,17 @@ public function index()
             'longitude' => 'required|numeric|between:-180,180',
             'description' => 'nullable|string|max:500',
             'rayon_validation' => 'required|integer|min:1',
+            'recommandation' => ['nullable', 'array'],
+            'recommandation.*.nom' => ['required_with:recommandation', 'string', 'max:150'],
+            'recommandation.*.description' => ['nullable', 'string', 'max:255'],
+            'ressource' => ['nullable', 'string', 'max:30'],
         ]);
+
+        $validated['recommandation'] = collect($validated['recommandation'] ?? [])
+            ->filter(fn ($item) => filled($item['nom'] ?? null))
+            ->values()
+            ->all() ?: null;
+        $validated['ressource'] = filled($validated['ressource'] ?? null) ? $validated['ressource'] : null;
 
         $place->update($validated);
 

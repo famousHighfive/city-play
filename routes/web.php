@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CheckAccessExpiration;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
@@ -33,6 +34,10 @@ Route::get('/', function () {
     ]);
 });
 
+Route::middleware(['auth', CheckAccessExpiration::class])->group(function (){
+
+
+
 /*
 |--------------------------------------------------------------------------
 | DASHBOARD PLAYER
@@ -41,6 +46,8 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [GameController::class, 'dashboard'])->name('dashboard');
+    // Historique complet de toutes les parties jouées (aucune limite par territoire)
+    Route::get('/historique', [GameController::class, 'history'])->name('game.history');
 });
 
 /*
@@ -88,6 +95,9 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
 
     Route::post('/environments/{environment}/start-game', [GameController::class, 'startNewGame'])
         ->name('game.start');
+        
+    Route::get('/game/{game}/start-sequence', [GameController::class, 'startSequence'])
+        ->name('game.start-sequence');
 
     Route::get('/game/{game}/resume', [GameController::class, 'resume'])
         ->name('game.resume');
@@ -107,6 +117,10 @@ Route::middleware(['auth', 'verified'])->scopeBindings()->group(function () {
     Route::post('/game/{game}/enigme/{enigme}/skip', [GameController::class, 'skipEnigme'])
         ->name('game.skip');
 
+        Route::post('/games/{game}/validate-position', [
+    GameController::class,
+    'validatePosition'
+])->name('game.validate.position');
     Route::post('/game/{game}/pause', [GameController::class, 'pauseGame'])
         ->name('game.pause');
 });
@@ -123,6 +137,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+});
 /*
 |--------------------------------------------------------------------------
 | INVITATIONS PUBLIQUES
@@ -150,7 +165,8 @@ Route::prefix('invitation')
 
         Route::get('/{token}', [InvitationController::class, 'show'])
             ->name('show');
-    });
+
+});
 
 /*
 |--------------------------------------------------------------------------
