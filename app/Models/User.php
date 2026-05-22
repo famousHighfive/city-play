@@ -4,99 +4,44 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Http\Resources\JsonApi\RelationResolver;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;use Illuminate\Database\Eloquent\SoftDeletes;
+    use HasFactory, Notifiable, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
      *
-     * @var list<string>
+     * @var array<int, string>
      */
-    
-    /**
-     * The attributes that should be hidden for serialization.
-    *
-    * @var list<string>
-    */
-    
-    /**
-     * Get the attributes that should be cast.
-    *
-    * @return array<string, string>
-    */
     protected $fillable = [
         'name',
-        'pseudo',
         'email',
         'password',
-        'telephone',
         'role',
-        'account_status',
-        'profile_photo',
-        'access_expires_at',
+        'xp',
     ];
 
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'access_expires_at' => 'datetime',
-            'password' => 'hashed',
-        ];
-    }
-
-    public function invitations()
-    {
-        return $this->hasMany(Invitation::class, 'player_id');
-    }
-
-    public function isAdmin(): bool
-    {
-        return $this->role === 'admin';
-    }
-
-    public function isPlayer(): bool
-    {
-        return $this->role === 'player';
-    }
-
     /**
-     * Environnements auxquels le joueur a accès via une invitation acceptée.
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
      */
-    public function environmentsAccessibles()
-    {
-        return Environment::query()
-            ->where('actif', true)
-            ->whereIn(
-                'id',
-                $this->invitations()
-                    ->where('statut', 'used')
-                    ->pluck('environment_id')
-            )
-            ->get();
-    }
-
-    public function hasAccessToEnvironment(int|Environment $environment): bool
-    {
-        $environmentId = $environment instanceof Environment
-            ? $environment->id
-            : $environment;
-
-        return $this->invitations()
-            ->where('statut', 'used')
-            ->where('environment_id', $environmentId)
-            ->exists();
-    }
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+    ];
 }
