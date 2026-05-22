@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { useAudioStore } from '@/stores/audio';
+import Dialog from 'primevue/dialog';
 
 const props = defineProps({
     environment: {
@@ -25,7 +26,6 @@ const props = defineProps({
     },
 });
 
-// --- Stores ---
 const toast = useToast();
 const audioStore = useAudioStore();
 
@@ -33,24 +33,25 @@ const currentStep = ref(1);
 const showModeModal = ref(props.afficher_modal_mode);
 const positionCaptured = ref(false);
 const loadingLaunch = ref(false);
+const loadingPosition = ref(false);
+const playerLocation = ref({
+    latitude: null,
+    longitude: null,
+    accuracy: null
+});
 
 const form = useForm({
     mode_jeu: '',
-
     nb_membres: 1,
     participants: [],
-
     challenger_email: '',
-
     duree_prevue: props.gameOptions.duree_defaut,
     moyen_locomotion: props.gameOptions.moyens_locomotion[0]?.value ?? 'pied',
     niveau_difficulte: props.gameOptions.niveaux_difficulte[0]?.value ?? 'easy',
-
     latitude: null,
     longitude: null,
 });
 
-/** Nombre d'emails à saisir = coéquipiers (hors joueur connecté). */
 const nbEmailsCoEquipiers = computed(() => Math.max(0, (parseInt(form.nb_membres) || 1) - 1));
 
 watch(() => form.nb_membres, (value) => {
@@ -77,14 +78,41 @@ watch(() => form.nb_membres, (value) => {
     }
 });
 
+const difficultyLabel = computed(() => {
+    const niveau = props.gameOptions.niveaux_difficulte.find(
+        (n) => String(n.value) === String(form.niveau_difficulte)
+    );
+    return niveau?.label ?? form.niveau_difficulte;
+});
+
+const locomotionLabel = computed(() => {
+    const moyen = props.gameOptions.moyens_locomotion.find(
+        (m) => m.value === form.moyen_locomotion
+    );
+    return moyen?.label ?? form.moyen_locomotion;
+});
+
+const locomotionIcon = computed(() => {
+    switch (form.moyen_locomotion) {
+        case 'pied': return '🚶';
+        case 'velo': return '🚲';
+        case 'voiture': return '🚗';
+        default: return '🚶';
+    }
+});
+
 const nextStep = () => {
     audioStore.play('click');
-    currentStep.value++;
+    if (currentStep.value < 4) {
+        currentStep.value++;
+    }
 };
 
-const retourDashboard = () => {
+const prevStep = () => {
     audioStore.play('click');
-    router.visit(route('dashboard'));
+    if (currentStep.value > 1) {
+        currentStep.value--;
+    }
 };
 
 const selectMode = (mode) => {
@@ -93,65 +121,89 @@ const selectMode = (mode) => {
     showModeModal.value = false;
 };
 
+const retourDashboard = () => {
+    audioStore.play('click');
+    router.visit(route('dashboard'));
+};
 
 const capturePosition = () => {
     if (!navigator.geolocation) {
         toast.add({
             severity: 'error',
             summary: 'Erreur',
-            detail: 'La géolocalisation n’est pas disponible.',
+            detail: 'La géolocalisation n\'est pas supportée par votre navigateur.',
             life: 5000
         });
-        audioStore.play('error');
         return;
     }
+
+    loadingPosition.value = true;
+    audioStore.play('notification');
 
     navigator.geolocation.getCurrentPosition(
         (position) => {
             form.latitude = position.coords.latitude;
             form.longitude = position.coords.longitude;
-
+            playerLocation.value = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy
+            };
             positionCaptured.value = true;
+            loadingPosition.value = false;
             audioStore.play('success');
-
-            setTimeout(() => {
-                currentStep.value = 3;
-            }, 1800);
+            
+            toast.add({
+                severity: 'success',
+                summary: 'Position capturée !',
+                detail: `Précision: ~${Math.round(position.coords.accuracy)}m`,
+                life: 3000
+            });
         },
-        () => {
+        (error) => {
+            loadingPosition.value = false;
+            audioStore.play('error');
+            
+            let errorMessage = "Impossible d'accéder à votre position GPS.";
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMessage = "Vous avez refusé l'accès à la géolocalisation. Veuillez l'activer dans les paramètres de votre navigateur.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMessage = "La position n'a pas pu être déterminée.";
+                    break;
+                case error.TIMEOUT:
+                    errorMessage = "La demande de géolocalisation a expiré. Veuillez réessayer.";
+                    break;
+            }
+            
             toast.add({
                 severity: 'error',
-                summary: 'Erreur',
-                detail: 'Impossible de récupérer votre position.',
-                life: 5000
+                summary: 'Erreur GPS',
+                detail: errorMessage,
+                life: 8000
             });
-            audioStore.play('error');
-        }
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
 };
 
 const payloadPourBackend = (data) => {
-
     const payload = { ...data };
 
     if (payload.mode_jeu === 'challenge') {
-
         delete payload.nb_membres;
         delete payload.participants;
-
     } else {
-
         delete payload.challenger_email;
-
-        const nb = parseInt(payload.nb_membres) || 1;
-
-        if (nb <= 1) {
-            payload.participants = [];
-        }
     }
 
     return payload;
 };
+
+const peutLancer = computed(
+    () => props.gameOptions.enigmes_disponibles > 0 && positionCaptured.value && form.mode_jeu
+);
 
 const submit = () => {
     if (!form.mode_jeu) {
@@ -216,495 +268,343 @@ const submit = () => {
     });
 };
 
-const difficultyLabel = computed(() => {
-    const niveau = props.gameOptions.niveaux_difficulte.find(
-        (n) => String(n.value) === String(form.niveau_difficulte)
-    );
-    return niveau ? `${niveau.emoji} ${niveau.label}` : '';
-});
-
-const locomotionLabel = computed(() => {
-    const moyen = props.gameOptions.moyens_locomotion.find(
-        (m) => m.value === form.moyen_locomotion
-    );
-    return moyen ? `${moyen.emoji} ${moyen.label}` : '';
-});
-
-const modeLabel = computed(() => {
-    const mode = props.gameOptions.modes.find((m) => m.value === form.mode_jeu);
-    return mode ? `${mode.emoji} ${mode.label}` : form.mode_jeu;
-});
-
-const peutLancer = computed(
-    () => props.gameOptions.enigmes_disponibles > 0 && positionCaptured.value && form.mode_jeu
-);
-
-const reprendrePartie = () => {
-    audioStore.play('click');
-    if (props.existingGame?.id) {
-        router.visit(route('game.resume', props.existingGame.id));
+onMounted(() => {
+    if (props.afficher_modal_mode && !form.mode_jeu) {
+        showModeModal.value = true;
     }
-};
+});
 </script>
 
 <template>
-    <Head :title="`Configurer - ${environment.nom}`" />
+    <Head title="Configurer votre partie" />
 
     <AuthenticatedLayout>
-        <!-- Partie déjà en cours -->
-        <div
-            v-if="existingGame"
-            class="mx-auto max-w-5xl px-4 pt-6"
-        >
-            <div class="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <p class="text-sm text-amber-900">
-                    Partie en cours — reprendre à l'énigme
-                    <strong>{{ existingGame.etape_reprise }}</strong>
-                    / {{ existingGame.progression?.total ?? '?' }}
-                </p>
-                <button
-                    @click="reprendrePartie"
-                    class="rounded-xl bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700"
-                >
-                    Reprendre où j'en étais
-                </button>
-            </div>
-        </div>
-
-        <!-- MODAL CHOIX -->
-        <div
-            v-if="showModeModal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-        >
-            <div class="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl relative overflow-hidden">
-                <div class="absolute top-0 right-0 h-40 w-40 bg-indigo-100 rounded-full blur-3xl opacity-60"></div>
-
-                <button
-                    @click="retourDashboard"
-                    class="mb-6 inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
-                >
-                    ← Retour
-                </button>
-
-                <div class="relative">
-                    <h2 class="text-3xl font-black text-gray-800 text-center">
-                        Choisissez votre mode
-                    </h2>
-
-                    <p class="mt-3 text-center text-gray-500">
-                        Sélectionnez votre expérience de jeu immersive
+        <div class="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-purple-50 py-12">
+            <div class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+                <!-- Header -->
+                <div class="text-center mb-12">
+                    <div class="inline-flex items-center gap-3 mb-4">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-xl">
+                            <span class="text-3xl">🎮</span>
+                        </div>
+                    </div>
+                    <h1 class="text-4xl font-black text-gray-900 tracking-tight mb-2">
+                        Préparez votre aventure
+                    </h1>
+                    <p class="text-xl text-gray-500">
+                        {{ environment.nom }}
                     </p>
+                </div>
 
-                    <p
-                        v-if="gameOptions.enigmes_disponibles === 0"
-                        class="mt-6 text-center text-sm text-red-600 font-medium"
-                    >
-                        Aucune énigme active n'est disponible pour cette ville.
-                    </p>
-
-                    <div class="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <button
-                            v-for="mode in gameOptions.modes"
-                            :key="mode.value"
-                            @click="selectMode(mode.value)"
-                            :disabled="gameOptions.enigmes_disponibles === 0"
-                            class="group relative overflow-hidden rounded-3xl border p-8 text-left transition-all duration-300 hover:scale-[1.03] hover:shadow-2xl disabled:opacity-50 disabled:pointer-events-none"
-                            :class="mode.value === 'equipe'
-                                ? 'border-indigo-100 bg-gradient-to-br from-indigo-50 to-indigo-100'
-                                : 'border-pink-100 bg-gradient-to-br from-pink-50 to-pink-100'"
+                <!-- Progress Steps -->
+                <div class="mb-10">
+                    <div class="flex items-center justify-center gap-2">
+                        <div 
+                            v-for="step in 4" 
+                            :key="step"
+                            class="flex items-center gap-2"
                         >
-                            <div class="text-6xl mb-5">
-                                {{ mode.emoji }}
-                            </div>
-
-                            <h3 class="text-2xl font-bold text-gray-800">
-                                {{ mode.label }}
-                            </h3>
-
-                            <p class="mt-2 text-gray-600">
-                                {{ mode.description }}
-                            </p>
-
-                            <div
-                                class="mt-6 font-semibold"
-                                :class="mode.value === 'equipe' ? 'text-indigo-600' : 'text-pink-600'"
+                            <div 
+                                class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300"
+                                :class="currentStep >= step 
+                                    ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-lg' 
+                                    : 'bg-gray-200 text-gray-500'"
                             >
-                                {{ mode.value === 'equipe' ? 'Jouer en groupe →' : 'Défier un joueur →' }}
+                                {{ step }}
                             </div>
-                        </button>
+                            <div 
+                                v-if="step < 4"
+                                class="w-12 h-1 rounded-full transition-all duration-300"
+                                :class="currentStep > step ? 'bg-gradient-to-r from-indigo-600 to-purple-600' : 'bg-gray-200'"
+                            ></div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- HEADER -->
-        <header class="bg-white border-b border-gray-100">
-            <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex items-center justify-between">
-                <div>
-                    <h1 class="text-2xl font-black text-gray-800">
-                        {{ environment.nom }}
-                    </h1>
-
-                    <p class="text-sm text-gray-500 mt-1">
-                        Configuration de votre aventure
-                        <span v-if="gameOptions.enigmes_disponibles > 0" class="text-indigo-600">
-                            · {{ gameOptions.enigmes_disponibles }} énigme(s) disponible(s)
-                        </span>
-                    </p>
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <div
-                        v-for="step in 3"
-                        :key="step"
-                        class="h-3 w-16 rounded-full transition-all duration-500"
-                        :class="currentStep >= step ? 'bg-indigo-600' : 'bg-gray-200'"
-                    />
-                </div>
-            </div>
-        </header>
-
-        <div class="py-12">
-            <div class="mx-auto max-w-5xl px-4">
-                <div class="rounded-3xl bg-white p-8 shadow-xl">
-                    <!-- ETAPE 1 -->
-                    <div v-if="currentStep === 1">
-                        <div class="mb-10">
-                            <h2 class="text-3xl font-black text-gray-800">
-                                Informations de la partie
-                            </h2>
-
-                            <p class="mt-2 text-gray-500">
-                                Configurez les paramètres de votre session.
-                            </p>
+                <!-- Configuration Card -->
+                <div class="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
+                    <!-- Step 1: Mode -->
+                    <div v-if="currentStep === 1" class="p-8">
+                        <div class="text-center mb-8">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">Choisissez votre mode de jeu</h2>
+                            <p class="text-gray-500">Sélectionnez comment vous voulez jouer</p>
                         </div>
-
-                        <!-- MODE EQUIPE -->
-                        <div
-                            v-if="form.mode_jeu === 'equipe'"
-                            class="space-y-8"
-                        >
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Nombre de membres, vous inclus (max {{ gameOptions.max_membres }})
-                                </label>
-
-                                <input
-                                    v-model="form.nb_membres"
-                                    type="number"
-                                    :min="1"
-                                    :max="gameOptions.max_membres"
-                                    required
-                                    class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                />
-
-                                <p
-                                    v-if="nbEmailsCoEquipiers === 0"
-                                    class="mt-2 text-sm text-gray-500"
-                                >
-                                    Vous jouez seul : aucun email supplémentaire à renseigner.
-                                </p>
-                            </div>
-
-                            <div v-if="nbEmailsCoEquipiers > 0">
-                                <label class="block text-sm font-semibold text-gray-700 mb-4">
-                                    Emails des coéquipiers ({{ nbEmailsCoEquipiers }} requis)
-                                </label>
-
-                                <div class="grid md:grid-cols-2 gap-4">
-                                    <input
-                                        v-for="(participant, index) in form.participants"
-                                        :key="index"
-                                        v-model="form.participants[index]"
-                                        type="email"
-                                        required
-                                        :placeholder="`Coéquipier ${index + 1}`"
-                                        class="rounded-2xl border-gray-200 bg-gray-50 px-5 py-4 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                    />
-                                </div>
-
-                                <p v-if="form.errors.participants" class="text-red-500 text-xs mt-2">
-                                    {{ form.errors.participants }}
-                                </p>
-                            </div>
+                        
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <button
+                                @click="selectMode('equipe')"
+                                class="p-8 rounded-2xl border-2 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                :class="form.mode_jeu === 'equipe' 
+                                    ? 'border-indigo-500 bg-gradient-to-br from-indigo-50 to-purple-50' 
+                                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'"
+                            >
+                                <div class="text-5xl mb-4">👥</div>
+                                <h3 class="text-xl font-bold text-gray-900 mb-2">Mode équipe</h3>
+                                <p class="text-gray-500 text-sm">Jouez avec vos amis et résolvez les énigmes ensemble</p>
+                            </button>
+                            
+                            <button
+                                @click="selectMode('challenge')"
+                                class="p-8 rounded-2xl border-2 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                :class="form.mode_jeu === 'challenge' 
+                                    ? 'border-emerald-500 bg-gradient-to-br from-emerald-50 to-teal-50' 
+                                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'"
+                            >
+                                <div class="text-5xl mb-4">⚔️</div>
+                                <h3 class="text-xl font-bold text-gray-900 mb-2">Mode défi</h3>
+                                <p class="text-gray-500 text-sm">Relevez le défi et testez vos compétences seul</p>
+                            </button>
                         </div>
-
-                        <!-- MODE CHALLENGE -->
-                        <div
-                            v-if="form.mode_jeu === 'challenge'"
-                            class="space-y-8"
-                        >
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Email de votre adversaire
-                                </label>
-
-                                <input
-                                    v-model="form.challenger_email"
-                                    type="email"
-                                    required
-                                    placeholder="adversaire@email.com"
-                                    class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                />
-
-                                <p v-if="form.errors.challenger_email" class="text-red-500 text-xs mt-1">
-                                    {{ form.errors.challenger_email }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- PARAMETRES -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-10">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Durée (min)
-                                </label>
-
-                                <input
-                                    v-model="form.duree_prevue"
-                                    type="number"
-                                    :min="gameOptions.duree_min"
-                                    required
-                                    class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4"
-                                />
-
-                                <p v-if="form.errors.duree_prevue" class="text-red-500 text-xs mt-1">
-                                    {{ form.errors.duree_prevue }}
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Difficulté
-                                </label>
-
-                                <select
-                                    v-model="form.niveau_difficulte"
-                                    class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4"
-                                >
-                                    <option
-                                        v-for="niveau in gameOptions.niveaux_difficulte"
-                                        :key="niveau.value"
-                                        :value="niveau.value"
-                                    >
-                                        {{ niveau.emoji }} {{ niveau.label }}
-                                    </option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                    Locomotion
-                                </label>
-
-                                <select
-                                    v-model="form.moyen_locomotion"
-                                    class="w-full rounded-2xl border-gray-200 bg-gray-50 px-5 py-4"
-                                >
-                                    <option
-                                        v-for="moyen in gameOptions.moyens_locomotion"
-                                        :key="moyen.value"
-                                        :value="moyen.value"
-                                    >
-                                        {{ moyen.emoji }} {{ moyen.label }}
-                                    </option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <p v-if="form.errors.mode_jeu" class="text-red-500 text-sm mt-4">
-                            {{ form.errors.mode_jeu }}
-                        </p>
-
-                        <div class="flex justify-end mt-12">
+                        
+                        <div v-if="form.mode_jeu" class="mt-8 text-center">
                             <button
                                 @click="nextStep"
-                                :disabled="!form.mode_jeu"
-                                class="rounded-2xl bg-indigo-600 px-8 py-4 text-white font-bold shadow-lg transition hover:scale-105 hover:bg-indigo-700 disabled:opacity-50"
+                                class="px-10 py-4 bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
                             >
                                 Continuer →
                             </button>
                         </div>
                     </div>
 
-                    <!-- ETAPE 2 : géolocalisation locale uniquement (non envoyée au back) -->
-                    <div v-if="currentStep === 2">
-                        <div class="py-16 text-center">
-                            <div class="text-8xl mb-6">📡</div>
-
-                            <h2 class="text-4xl font-black text-gray-800">
-                                Capture de position
+                    <!-- Step 2: Team / Challenge -->
+                    <div v-if="currentStep === 2" class="p-8">
+                        <button
+                            @click="prevStep"
+                            class="mb-6 px-4 py-2 text-gray-600 hover:text-gray-900 font-semibold text-sm flex items-center gap-2"
+                        >
+                            ← Retour
+                        </button>
+                        
+                        <div class="text-center mb-8">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">
+                                {{ form.mode_jeu === 'equipe' ? 'Votre équipe' : 'Votre défi' }}
                             </h2>
-
-                            <p class="mt-4 text-gray-500 max-w-xl mx-auto">
-                                Activez votre position GPS pour confirmer que vous êtes prêt.
-                                Ces coordonnées restent sur votre appareil et ne sont pas enregistrées au lancement.
+                            <p class="text-gray-500">
+                                {{ form.mode_jeu === 'equipe' ? 'Ajoutez vos coéquipiers' : 'Préparez votre défi solo' }}
                             </p>
+                        </div>
 
-                            <div class="mt-14 flex justify-center">
-                                <button
-                                    @click="capturePosition"
-                                    class="relative overflow-hidden rounded-full bg-indigo-600 px-10 py-5 text-lg font-bold text-white shadow-2xl transition hover:scale-105"
-                                >
-                                    <span class="absolute inset-0 animate-pulse bg-white/20"></span>
-                                    <span class="relative">📍 Prendre ma position</span>
-                                </button>
+                        <div v-if="form.mode_jeu === 'equipe'" class="max-w-md mx-auto space-y-6">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                    Nombre de membres (max {{ gameOptions.max_membres }})
+                                </label>
+                                <input
+                                    v-model.number="form.nb_membres"
+                                    type="range"
+                                    min="1"
+                                    :max="gameOptions.max_membres"
+                                    class="w-full"
+                                />
+                                <div class="text-center mt-2 text-3xl font-bold text-indigo-600">
+                                    {{ form.nb_membres }}
+                                </div>
                             </div>
 
-                            <div
-                                v-if="positionCaptured"
-                                class="mt-10 inline-block rounded-3xl bg-green-50 px-8 py-5 shadow-lg border border-green-100"
+                            <div v-if="nbEmailsCoEquipiers > 0" class="space-y-4">
+                                <label class="block text-sm font-semibold text-gray-700">
+                                    Emails des coéquipiers
+                                </label>
+                                <input
+                                    v-for="(email, index) in form.participants"
+                                    :key="index"
+                                    v-model="form.participants[index]"
+                                    type="email"
+                                    :placeholder="`Email du coéquipier ${index + 1}`"
+                                    class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div v-if="form.mode_jeu === 'challenge'" class="max-w-md mx-auto text-center">
+                            <div class="p-8 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200">
+                                <div class="text-6xl mb-4">🎯</div>
+                                <h3 class="text-xl font-bold text-gray-900 mb-2">Prêt pour le défi ?</h3>
+                                <p class="text-gray-600">Vous allez relever l'aventure seul, bon courage !</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-8 text-center">
+                            <button
+                                @click="nextStep"
+                                class="px-10 py-4 bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
                             >
-                                <div class="text-green-600 font-bold text-lg">
-                                    ✅ Position enregistrée localement
-                                </div>
-
-                                <div class="mt-3 text-sm text-gray-600 space-y-1">
-                                    <div>
-                                        Latitude :
-                                        <span class="font-semibold">{{ form.latitude }}</span>
-                                    </div>
-                                    <div>
-                                        Longitude :
-                                        <span class="font-semibold">{{ form.longitude }}</span>
-                                    </div>
-                                </div>
-                            </div>
+                                Continuer →
+                            </button>
                         </div>
                     </div>
 
-                    <!-- ETAPE 3 -->
-                    <div v-if="currentStep === 3">
-                        <div class="mb-10">
-                            <h2 class="text-4xl font-black text-gray-800">
-                                Récapitulatif
-                            </h2>
-
-                            <p class="mt-2 text-gray-500">
-                                Vérifiez les informations avant de commencer.
-                            </p>
+                    <!-- Step 3: Settings -->
+                    <div v-if="currentStep === 3" class="p-8">
+                        <button
+                            @click="prevStep"
+                            class="mb-6 px-4 py-2 text-gray-600 hover:text-gray-900 font-semibold text-sm flex items-center gap-2"
+                        >
+                            ← Retour
+                        </button>
+                        
+                        <div class="text-center mb-8">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">Paramètres de la partie</h2>
+                            <p class="text-gray-500">Personnalisez votre expérience</p>
                         </div>
 
-                        <div class="grid lg:grid-cols-2 gap-6">
-                            <div class="rounded-3xl bg-gradient-to-br from-indigo-50 to-indigo-100 p-7 shadow-lg">
-                                <div class="text-sm font-semibold text-indigo-500 uppercase">Mode</div>
-                                <div class="mt-3 text-3xl font-black text-gray-800">{{ modeLabel }}</div>
-                            </div>
-
-                            <div class="rounded-3xl bg-gradient-to-br from-pink-50 to-pink-100 p-7 shadow-lg">
-                                <div class="text-sm font-semibold text-pink-500 uppercase">Difficulté</div>
-                                <div class="mt-3 text-3xl font-black text-gray-800">{{ difficultyLabel }}</div>
-                            </div>
-
-                            <div class="rounded-3xl bg-gradient-to-br from-green-50 to-green-100 p-7 shadow-lg">
-                                <div class="text-sm font-semibold text-green-500 uppercase">Durée</div>
-                                <div class="mt-3 text-3xl font-black text-gray-800">{{ form.duree_prevue }} min</div>
-                            </div>
-
-                            <div class="rounded-3xl bg-gradient-to-br from-yellow-50 to-yellow-100 p-7 shadow-lg">
-                                <div class="text-sm font-semibold text-yellow-600 uppercase">Locomotion</div>
-                                <div class="mt-3 text-3xl font-black text-gray-800">{{ locomotionLabel }}</div>
-                            </div>
-                        </div>
-
-                        <div class="mt-10 rounded-3xl border border-gray-100 bg-gray-50 p-8">
-                            <div class="flex items-center justify-between mb-6">
-                                <h3 class="text-2xl font-black text-gray-800">Participants</h3>
-
-                                <span class="rounded-full bg-indigo-100 px-4 py-2 text-sm font-bold text-indigo-600">
-                                    {{
-                                        form.mode_jeu === 'equipe'
-                                            ? `${form.nb_membres} membres`
-                                            : '1 challenger'
-                                    }}
-                                </span>
-                            </div>
-
-                            <div v-if="form.mode_jeu === 'equipe'">
-                                <p
-                                    v-if="form.nb_membres <= 1"
-                                    class="rounded-2xl bg-white px-5 py-4 shadow-sm text-gray-700"
+                        <div class="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+                            <!-- Difficulty -->
+                            <div class="p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200">
+                                <div class="text-3xl mb-3">🎯</div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                    Niveau de difficulté
+                                </label>
+                                <select
+                                    v-model="form.niveau_difficulte"
+                                    class="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
                                 >
-                                    👤 Vous seul (aucun coéquipier)
-                                </p>
-                                <div
-                                    v-else
-                                    class="grid md:grid-cols-2 gap-4"
-                                >
-                                    <div class="rounded-2xl bg-white px-5 py-4 shadow-sm">
-                                        👤 Vous (organisateur)
-                                    </div>
-                                    <div
-                                        v-for="(participant, index) in form.participants"
-                                        :key="index"
-                                        class="rounded-2xl bg-white px-5 py-4 shadow-sm"
+                                    <option
+                                        v-for="niveau in gameOptions.niveaux_difficulte"
+                                        :key="niveau.value"
+                                        :value="niveau.value"
                                     >
-                                        👤 {{ participant }}
-                                    </div>
+                                        {{ niveau.label }}
+                                    </option>
+                                </select>
+                                <div class="mt-2 text-lg font-bold text-amber-700">
+                                    {{ difficultyLabel }}
                                 </div>
                             </div>
 
-                            <div
-                                v-if="form.mode_jeu === 'challenge'"
-                                class="rounded-2xl bg-white px-5 py-4 shadow-sm"
-                            >
-                                ⚔️ {{ form.challenger_email }}
+                            <!-- Duration -->
+                            <div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200">
+                                <div class="text-3xl mb-3">⏱️</div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                    Durée estimée (min)
+                                </label>
+                                <input
+                                    v-model.number="form.duree_prevue"
+                                    type="range"
+                                    :min="gameOptions.duree_min"
+                                    :max="gameOptions.duree_max"
+                                    :step="15"
+                                    class="w-full"
+                                />
+                                <div class="mt-2 text-2xl font-bold text-blue-700">
+                                    {{ form.duree_prevue }} min
+                                </div>
+                            </div>
+
+                            <!-- Locomotion -->
+                            <div class="p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border border-purple-200">
+                                <div class="text-3xl mb-3">{{ locomotionIcon }}</div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                    Moyen de locomotion
+                                </label>
+                                <select
+                                    v-model="form.moyen_locomotion"
+                                    class="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
+                                >
+                                    <option
+                                        v-for="moyen in gameOptions.moyens_locomotion"
+                                        :key="moyen.value"
+                                        :value="moyen.value"
+                                    >
+                                        {{ moyen.label }}
+                                    </option>
+                                </select>
+                                <div class="mt-2 text-lg font-bold text-purple-700">
+                                    {{ locomotionLabel }}
+                                </div>
                             </div>
                         </div>
 
-                        <div class="mt-12 flex flex-col md:flex-row justify-end gap-4">
+                        <div class="mt-8 text-center">
                             <button
-                                @click="currentStep = 1"
-                                class="rounded-2xl border border-gray-200 bg-white px-8 py-4 font-bold text-gray-700 transition hover:bg-gray-100"
+                                @click="nextStep"
+                                class="px-10 py-4 bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
                             >
-                                Modifier
+                                Continuer →
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Location -->
+                    <div v-if="currentStep === 4" class="p-8">
+                        <button
+                            @click="prevStep"
+                            class="mb-6 px-4 py-2 text-gray-600 hover:text-gray-900 font-semibold text-sm flex items-center gap-2"
+                        >
+                            ← Retour
+                        </button>
+                        
+                        <div class="text-center mb-8">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">Votre position de départ</h2>
+                            <p class="text-gray-500">Capturez votre position pour commencer</p>
+                        </div>
+
+                        <div class="max-w-md mx-auto text-center space-y-6">
+                            <!-- Location Status -->
+                            <div 
+                                class="p-8 rounded-3xl border-2 transition-all duration-300"
+                                :class="positionCaptured 
+                                    ? 'border-emerald-500 bg-gradient-to-br from-emerald-50 to-teal-50' 
+                                    : 'border-gray-200 bg-gray-50'"
+                            >
+                                <div class="text-6xl mb-4">
+                                    {{ positionCaptured ? '✅' : '📍' }}
+                                </div>
+                                
+                                <div v-if="positionCaptured" class="space-y-2">
+                                    <h3 class="text-xl font-bold text-gray-900">Position capturée !</h3>
+                                    <p class="text-sm text-gray-600 font-mono">
+                                        {{ playerLocation.latitude?.toFixed(6) }}, {{ playerLocation.longitude?.toFixed(6) }}
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        Précision: ~{{ Math.round(playerLocation.accuracy) }}m
+                                    </p>
+                                </div>
+                                
+                                <div v-else class="space-y-2">
+                                    <h3 class="text-xl font-bold text-gray-900">Position non capturée</h3>
+                                    <p class="text-gray-500">Cliquez ci-dessous pour capturer votre position</p>
+                                </div>
+                            </div>
+
+                            <!-- Capture Button -->
+                            <button
+                                @click="capturePosition"
+                                :disabled="loadingPosition"
+                                class="w-full px-8 py-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-60 flex items-center justify-center gap-3"
+                            >
+                                <span v-if="loadingPosition" class="animate-spin">🔄</span>
+                                <span v-else>📍</span>
+                                {{ loadingPosition ? 'Capture en cours...' : (positionCaptured ? 'Recapturer ma position' : 'Capturer ma position') }}
                             </button>
 
+                            <!-- Launch Button -->
                             <button
+                                v-if="peutLancer"
                                 @click="submit"
-                                :disabled="loadingLaunch || !peutLancer"
-                                class="relative overflow-hidden rounded-2xl bg-indigo-600 px-10 py-4 font-bold text-white shadow-xl transition hover:scale-105 disabled:opacity-70"
+                                :disabled="loadingLaunch"
+                                class="w-full px-8 py-5 bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-black text-lg rounded-xl shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all disabled:opacity-60 flex items-center justify-center gap-3"
                             >
-                                <span
-                                    v-if="loadingLaunch"
-                                    class="absolute inset-0 bg-white/20 animate-pulse"
-                                ></span>
-
-                                <span class="relative flex items-center gap-3">
-                                    <svg
-                                        v-if="loadingLaunch"
-                                        class="h-5 w-5 animate-spin"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <circle
-                                            class="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="10"
-                                            stroke="currentColor"
-                                            stroke-width="4"
-                                        />
-                                        <path
-                                            class="opacity-75"
-                                            fill="currentColor"
-                                            d="M4 12a8 8 0 018-8v8H4z"
-                                        />
-                                    </svg>
-
-                                    {{
-                                        loadingLaunch
-                                            ? 'Lancement...'
-                                            : '🚀 Lancer la partie'
-                                    }}
-                                </span>
+                                <span v-if="loadingLaunch" class="animate-spin">⚙️</span>
+                                <span v-else>🚀</span>
+                                {{ loadingLaunch ? 'Lancement en cours...' : 'Lancer l\'aventure !' }}
                             </button>
                         </div>
                     </div>
                 </div>
+
+                <!-- Back to Dashboard -->
+                <div class="text-center mt-8">
+                    <button
+                        @click="retourDashboard"
+                        class="px-6 py-3 text-gray-500 hover:text-gray-700 font-semibold text-sm"
+                    >
+                        ← Retour au dashboard
+                    </button>
+                </div>
             </div>
         </div>
+
         <Toast position="top-right" />
     </AuthenticatedLayout>
 </template>

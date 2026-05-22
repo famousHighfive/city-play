@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useAudioStore } from '@/stores/audio';
-import L from 'leaflet';
+import GameMap from '@/Components/GameMap.vue';
 
 const props = defineProps({
     game: Object,
@@ -14,16 +14,9 @@ const audioStore = useAudioStore();
 const currentPhase = ref('loading');
 const loadingProgress = ref(0);
 const currentLoadingMessage = ref('Initialisation du système d’exploration...');
-const revealedPlaces = ref([]);
-const routeDrawn = ref(false);
 const firstPlaceActive = ref(false);
-const mapContainer = ref(null);
-let mapInstance = null;
-let markers = [];
-let routePolyline = null;
 let loadingInterval = null;
 let messageInterval = null;
-let revealInterval = null;
 
 const loadingMessages = [
     'Initialisation du système d’exploration...',
@@ -64,85 +57,6 @@ const showLoading = () => {
     audioStore.play('notification');
 };
 
-const initMap = () => {
-    if (!mapContainer.value || !props.parcours.length) return;
-    
-    const firstPlace = props.parcours[0];
-    mapInstance = L.map(mapContainer.value, { 
-        zoomControl: false,
-        attributionControl: false
-    }).setView([firstPlace.latitude, firstPlace.longitude], 14);
-    
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19
-    }).addTo(mapInstance);
-};
-
-const revealPlaces = async () => {
-    revealedPlaces.value = [];
-    let index = 0;
-    
-    revealInterval = setInterval(() => {
-        if (index < props.parcours.length) {
-            const place = props.parcours[index];
-            
-            const marker = L.circleMarker([place.latitude, place.longitude], {
-                radius: index === 0 ? 12 : 8,
-                color: index === 0 ? '#10b981' : '#6366f1',
-                fillColor: index === 0 ? '#10b981' : '#6366f1',
-                fillOpacity: 0.8,
-                weight: index === 0 ? 3 : 2,
-                className: index === 0 ? 'place-marker active' : 'place-marker'
-            }).addTo(mapInstance);
-            
-            if (index === 0) {
-                marker.on('click', () => {
-                    startGame();
-                });
-            }
-            
-            markers.push(marker);
-            revealedPlaces.value.push({ ...place, index });
-            
-            if (index > 0) {
-                drawRoute();
-            }
-            
-            index++;
-        } else {
-            clearInterval(revealInterval);
-            firstPlaceActive.value = true;
-            if (markers[0]) {
-                markers[0].setStyle({
-                    radius: 14,
-                    weight: 4
-                });
-            }
-        }
-    }, 800);
-};
-
-const drawRoute = () => {
-    const coords = revealedPlaces.value.map(p => [p.latitude, p.longitude]);
-    
-    if (routePolyline) {
-        mapInstance.removeLayer(routePolyline);
-    }
-    
-    routePolyline = L.polyline(coords, {
-        color: '#818cf8',
-        weight: 3,
-        opacity: 0.7,
-        dashArray: '10, 10',
-        lineJoin: 'round'
-    }).addTo(mapInstance);
-    
-    if (coords.length >= 2) {
-        const bounds = L.latLngBounds(coords);
-        mapInstance.fitBounds(bounds, { padding: [50, 50] });
-    }
-};
-
 const startGame = () => {
     audioStore.play('success');
     router.visit(route('game.show', props.game.id));
@@ -161,10 +75,9 @@ onMounted(async () => {
         setTimeout(() => {
             currentPhase.value = 'map';
             nextTick(() => {
-                initMap();
                 setTimeout(() => {
-                    revealPlaces();
-                }, 500);
+                    firstPlaceActive.value = true;
+                }, 1000);
             });
         }, 500);
     }, 10000);
@@ -173,8 +86,6 @@ onMounted(async () => {
 onUnmounted(() => {
     if (loadingInterval) clearInterval(loadingInterval);
     if (messageInterval) clearInterval(messageInterval);
-    if (revealInterval) clearInterval(revealInterval);
-    if (mapInstance) mapInstance.remove();
 });
 </script>
 
@@ -224,8 +135,13 @@ onUnmounted(() => {
         <!-- Map Phase -->
         <Transition name="fade" mode="out-in">
             <div v-if="currentPhase === 'map'" class="absolute inset-0 bg-slate-900">
-                <!-- Map container -->
-                <div ref="mapContainer" class="absolute inset-0"></div>
+                <!-- Map -->
+                <GameMap 
+                    :parcours="parcours" 
+                    :show-player-location="true"
+                    :current-place-index="0"
+                    @place-click="startGame"
+                />
                 
                 <!-- Overlay UI -->
                 <div class="absolute inset-0 pointer-events-none">
@@ -237,7 +153,7 @@ onUnmounted(() => {
                             </div>
                             <div>
                                 <h2 class="text-xl font-bold text-white">Votre parcours</h2>
-                                <p class="text-sm text-slate-400">{{ revealedPlaces.length }} / {{ parcours.length }} lieux détectés</p>
+                                <p class="text-sm text-slate-400">{{ parcours.length }} lieux à découvrir</p>
                             </div>
                         </div>
                     </div>
@@ -271,9 +187,12 @@ onUnmounted(() => {
                                             <p class="text-emerald-100/90">Cliquez sur le point lumineux pour commencer votre exploration.</p>
                                         </div>
                                         <div class="hidden sm:block">
-                                            <div class="px-4 py-2 bg-white/20 rounded-lg backdrop-blur text-white font-semibold text-sm animate-bounce">
-                                                →
-                                            </div>
+                                            <button 
+                                                @click="startGame"
+                                                class="px-6 py-3 bg-white text-emerald-600 rounded-xl font-bold text-sm hover:scale-105 transition-transform shadow-lg"
+                                            >
+                                                Commencer →
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -302,22 +221,5 @@ onUnmounted(() => {
 .slide-up-enter-from {
     opacity: 0;
     transform: translateY(30px);
-}
-
-.place-marker {
-    transition: all 0.3s ease;
-}
-
-.place-marker.active {
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-    }
-    50% {
-        box-shadow: 0 0 0 20px rgba(16, 185, 129, 0);
-    }
 }
 </style>

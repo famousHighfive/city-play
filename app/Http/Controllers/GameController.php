@@ -604,6 +604,20 @@ class GameController extends Controller
         }
 
         $totalEnigmes = $game->enigmes()->count();
+        
+        // Build parcours array with place coordinates
+        $parcours = $game->enigmes()
+            ->with('place')
+            ->orderByPivot('ordre')
+            ->get()
+            ->map(function ($enigme) {
+                return [
+                    'latitude' => $enigme->place->latitude,
+                    'longitude' => $enigme->place->longitude,
+                ];
+            })
+            ->values()
+            ->toArray();
 
         return Inertia::render('Game/PlayEnigme', [
             'game' => $game,
@@ -612,6 +626,8 @@ class GameController extends Controller
                 'etape' => $currentEnigme->pivot->ordre,
                 'total' => $totalEnigmes,
             ],
+            'parcours' => $parcours,
+            'currentPlaceIndex' => $currentEnigme->pivot->ordre - 1,
             'labels' => $this->gameLabels(),
             'modal_lieu' => $modalLieu,
             'gps_error' => $gpsError,
