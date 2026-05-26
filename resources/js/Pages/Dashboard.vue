@@ -97,15 +97,27 @@ const strokeDashoffset = computed(() => {
 
     <AuthenticatedLayout>
         <template #header>
-            <div class="flex items-center gap-3">
-                <svg class="w-6 h-6 text-emerald-400 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m12.728 6.364A9 9 0 113 12a9 9 0 0115.364 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9l1 3h-2l1-3z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15l-1-3h2l-1 3z" />
-                </svg>
-                <h2 class="text-xl font-black tracking-wider text-white uppercase">
-                    Tableau d'Exploration
-                </h2>
+            <div class="flex flex-wrap items-center justify-between gap-4 w-full">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6 text-emerald-400 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m12.728 6.364A9 9 0 113 12a9 9 0 0115.364 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9l1 3h-2l1-3z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15l-1-3h2l-1 3z" />
+                    </svg>
+                    <h2 class="text-xl font-black tracking-wider text-white uppercase">
+                        Tableau d'Exploration
+                    </h2>
+                </div>
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-black text-indigo-700 uppercase tracking-widest transition hover:bg-indigo-100"
+                    @click="router.visit(route('game.history'))"
+                >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Historique
+                </button>
             </div>
         </template>
 

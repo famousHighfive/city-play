@@ -48,7 +48,7 @@ class InvitationService
         return $invitation;
     }
 
-    /**
+    /** 
      * Marque l'invitation comme utilisée.
      * Appelé quand l'invité a fini son inscription.
      */

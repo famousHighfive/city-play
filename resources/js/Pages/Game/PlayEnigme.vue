@@ -81,6 +81,21 @@ const modeLabel = computed(() =>
 );
 
 const lieuValidation = computed(() => props.enigme.place || props.enigme.lieu_validation);
+
+// Lieux conseillés autour de la place (modal GPS / solution)
+const recommandationsModal = computed(() => {
+    const list = modalLieu.value?.recommandation;
+    return Array.isArray(list) ? list.filter((r) => r?.nom?.trim()) : [];
+});
+
+// Numéro « plus d'infos » (ressource du lieu)
+const ressourceModal = computed(() => modalLieu.value?.ressource?.trim() || null);
+
+const telLienModal = computed(() => {
+    if (!ressourceModal.value) return null;
+    const chiffres = ressourceModal.value.replace(/[^\d+]/g, '');
+    return chiffres ? `tel:${chiffres}` : null;
+});
 const cibleLat = computed(() => Number(lieuValidation.value?.latitude ?? 0));
 const cibleLng = computed(() => Number(lieuValidation.value?.longitude ?? 0));
 const rayon = computed(() => Number(lieuValidation.value?.rayon_validation ?? 30));
@@ -523,22 +538,79 @@ const backgroundImage = computed(() => {
                                 </p>
                             </div>
 
-                            <div class="rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-6 space-y-3">
+                            <div class="mt-6 space-y-4">
+                            <!-- Lieu découvert -->
+                            <div class="rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-6">
                                 <h3 class="text-xl font-bold text-gray-900">
                                     {{ modalLieu.nom }}
                                 </h3>
                                 <p
                                     v-if="modalLieu.description"
-                                    class="text-sm text-gray-600 leading-relaxed"
+                                    class="text-sm text-gray-600 leading-relaxed mt-2"
                                 >
                                     {{ modalLieu.description }}
                                 </p>
                                 <p
                                     v-else
-                                    class="text-sm text-gray-400 italic"
+                                    class="text-sm text-gray-400 italic mt-2"
                                 >
                                     Aucune description disponible pour ce lieu.
                                 </p>
+                            </div>
+
+                            <!-- Lieux recommandés à proximité (toujours visible) -->
+                            <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-5 space-y-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg" aria-hidden="true">🗺️</span>
+                                    <h4 class="text-sm font-black text-emerald-800 uppercase tracking-wider">
+                                        Lieux recommandés à proximité
+                                    </h4>
+                                </div>
+                                <p class="text-xs text-emerald-700/90">
+                                    D'autres endroits à découvrir autour de ce lieu :
+                                </p>
+                                <ul v-if="recommandationsModal.length" class="space-y-2">
+                                    <li
+                                        v-for="(rec, i) in recommandationsModal"
+                                        :key="i"
+                                        class="text-sm bg-white rounded-xl px-4 py-3 border border-emerald-100 shadow-sm"
+                                    >
+                                        <span class="font-semibold text-gray-900">{{ rec.nom }}</span>
+                                        <span
+                                            v-if="rec.description"
+                                            class="block text-gray-500 text-xs mt-1 leading-relaxed"
+                                        >
+                                            {{ rec.description }}
+                                        </span>
+                                    </li>
+                                </ul>
+                                <p v-else class="text-sm text-emerald-800/60 italic">
+                                    Aucun lieu recommandé pour le moment.
+                                </p>
+                            </div>
+
+                            <!-- Plus d'infos (contact cliquable) -->
+                            <div
+                                v-if="ressourceModal && telLienModal"
+                                class="rounded-2xl border border-sky-100 bg-sky-50/90 p-5 space-y-2"
+                            >
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg" aria-hidden="true">ℹ️</span>
+                                    <h4 class="text-sm font-black text-sky-800 uppercase tracking-wider">
+                                        Plus d'infos
+                                    </h4>
+                                </div>
+                                <p class="text-xs text-sky-700/90">
+                                    Besoin d'aide ou d'un renseignement ? Contactez :
+                                </p>
+                                <a
+                                    :href="telLienModal"
+                                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white border border-sky-200 px-4 py-3 text-base font-bold text-sky-900 shadow-sm hover:bg-sky-100 hover:border-sky-300 transition active:scale-[0.98]"
+                                >
+                                    <span aria-hidden="true">📞</span>
+                                    {{ ressourceModal }}
+                                </a>
+                            </div>
                             </div>
 
                             <button

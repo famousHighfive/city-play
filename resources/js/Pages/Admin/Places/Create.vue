@@ -21,12 +21,22 @@ const form = useForm({
     environment_id: '',
     nom: '',
     description: '',
+    recommandation: [],
+    ressource: '',
     latitude: '',
     longitude: '',
     rayon_validation: 30,
     ordre: 0,
     popularite: 1,
 });
+
+const ajouterRecommandation = () => {
+    form.recommandation.push({ nom: '', description: '' });
+};
+
+const retirerRecommandation = (index) => {
+    form.recommandation.splice(index, 1);
+};
 
 const submit = () => {
 
@@ -394,6 +404,81 @@ const searchPlace = async () => {
                             class="w-full border rounded-xl px-4 py-3"
                         ></textarea>
 
+                    </div>
+
+                    <!-- RECOMMANDATIONS (lieux autour de la place) -->
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <label class="block font-medium">
+                                    Recommandations
+                                </label>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Lieux conseillés autour de cette place (affichés au joueur sur le modal)
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                @click="ajouterRecommandation"
+                                class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium"
+                            >
+                                + Ajouter un lieu
+                            </button>
+                        </div>
+
+                        <div
+                            v-if="form.recommandation.length === 0"
+                            class="text-sm text-gray-400 italic border border-dashed rounded-xl p-4"
+                        >
+                            Aucune recommandation pour le moment.
+                        </div>
+
+                        <div
+                            v-for="(rec, index) in form.recommandation"
+                            :key="index"
+                            class="border rounded-xl p-4 space-y-3 bg-slate-50"
+                        >
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs font-semibold text-gray-500 uppercase">Lieu #{{ index + 1 }}</span>
+                                <button
+                                    type="button"
+                                    @click="retirerRecommandation(index)"
+                                    class="text-red-600 text-sm hover:underline"
+                                >
+                                    Retirer
+                                </button>
+                            </div>
+                            <input
+                                v-model="rec.nom"
+                                type="text"
+                                placeholder="Nom du lieu recommandé"
+                                class="w-full border rounded-xl px-4 py-3"
+                            />
+                            <input
+                                v-model="rec.description"
+                                type="text"
+                                placeholder="Précision (optionnel)"
+                                class="w-full border rounded-xl px-4 py-3"
+                            />
+                        </div>
+                        <p v-if="form.errors.recommandation" class="text-sm text-red-600">{{ form.errors.recommandation }}</p>
+                    </div>
+
+                    <!-- RESSOURCE D'URGENCE -->
+                    <div>
+                        <label class="block mb-2 font-medium">
+                            Plus d'infos (contact)
+                        </label>
+                        <p class="text-sm text-gray-500 mb-2">
+                            Numéro affiché au joueur dans le modal (lien téléphone cliquable)
+                        </p>
+                        <input
+                            v-model="form.ressource"
+                            type="tel"
+                            placeholder="Ex: +229 97 00 00 00"
+                            class="w-full border rounded-xl px-4 py-3"
+                        />
+                        <p v-if="form.errors.ressource" class="mt-1 text-sm text-red-600">{{ form.errors.ressource }}</p>
                     </div>
 
                     <!-- RAYON -->

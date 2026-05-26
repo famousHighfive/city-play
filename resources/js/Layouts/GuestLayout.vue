@@ -12,7 +12,7 @@ import { Link } from '@inertiajs/vue3';
             <!-- Le GIF d'aventure en arrière-plan complet du volet gauche -->
             <div class="absolute inset-0 z-0">
                 <img 
-                    src="https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMGN4Z2w0c3M0MnNsdTYzZGRtenIxdGx3YXhrcjdhcWxqZWxxZHY2cyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o6Ztm62DeSStT0gCY/giphy.gif" 
+                    src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMmh2ZmI4bHhpNDN2bWIwcmIycDAyaGtlbG51NG9mdHN6d2ppcXVsdyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/7DUP9L3011BuHanfDs/giphy.gif" 
                     alt="Adventure Animation" 
                     class="w-full h-full object-cover object-center scale-105"
                 />

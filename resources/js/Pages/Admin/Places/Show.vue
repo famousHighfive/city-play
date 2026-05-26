@@ -69,6 +69,25 @@ defineProps({
                                     <p class="text-gray-900">{{ place.rayon_validation }} mètres</p>
                                 </div>
 
+                                <div v-if="place.ressource">
+                                    <h4 class="text-sm font-medium text-gray-500 mb-2">Plus d'infos (contact)</h4>
+                                    <p class="text-gray-900 font-mono">{{ place.ressource }}</p>
+                                </div>
+
+                                <div v-if="place.recommandation && place.recommandation.length">
+                                    <h4 class="text-sm font-medium text-gray-500 mb-2">Recommandations</h4>
+                                    <ul class="space-y-2">
+                                        <li
+                                            v-for="(rec, i) in place.recommandation"
+                                            :key="i"
+                                            class="p-3 bg-gray-50 rounded-lg text-sm"
+                                        >
+                                            <span class="font-medium text-gray-900">{{ rec.nom }}</span>
+                                            <span v-if="rec.description" class="text-gray-600"> — {{ rec.description }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+
                                 <div class="pt-4 border-t border-gray-200">
                                     <h4 class="text-sm font-medium text-gray-500 mb-4">Énigmes associées ({{ place.enigmes ? place.enigmes.length : 0 }})</h4>
                                     <div v-if="place.enigmes && place.enigmes.length > 0" class="space-y-2">

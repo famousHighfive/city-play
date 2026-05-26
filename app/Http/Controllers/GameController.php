@@ -22,21 +22,7 @@ class GameController extends Controller
             ? Environment::where('actif', true)->get()
             : $user->environmentsAccessibles();
 
-        $gamesQuery = Game::where('user_id', $user->id)
-            ->when(! $user->isAdmin(), function ($query) use ($user) {
-                $query->whereIn(
-                    'environment_id',
-                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
-                );
-            })
-            ->with(['environment', 'enigmes'])
-            ->latest();
-
-        $games = $gamesQuery->get()->map(function (Game $game) {
-            $this->synchroniserStatutPartie($game);
-
-            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
-        });
+        $games = $this->chargerPartiesJoueur();
 
         $partiesReprendables = $games
             ->filter(fn (array $partie) => $partie['peut_reprendre'])
@@ -95,6 +81,19 @@ class GameController extends Controller
         ]);
     }
 
+    /**
+     * Historique complet : toutes les parties du joueur (aucune suppression à l'affichage).
+     */
+    public function history()
+    {
+        $games = $this->chargerHistoriqueJoueur();
+
+        return Inertia::render('Game/History', [
+            'games' => $games->values(),
+            'labels' => $this->dashboardLabels(),
+        ]);
+    }
+
     public function configure(Request $request, Environment $environment)
     {
         $this->authorizePlayerEnvironment($environment);
@@ -148,17 +147,9 @@ class GameController extends Controller
         $nbMembres = $validated['mode_jeu'] === 'equipe' ? (int) $validated['nb_membres'] : 1;
         $participants = $validated['mode_jeu'] === 'equipe' ? array_filter($validated['participants'] ?? []) : [];
 
-        // Delete any existing finished game for this environment to allow new game
-        Game::where('user_id', auth()->id())
-            ->where('environment_id', $environment->id)
-            ->where('statut', 'terminee')
-            ->delete();
-
-        // Delete any in-progress game to let the user start fresh
-        Game::where('user_id', auth()->id())
-            ->where('environment_id', $environment->id)
-            ->whereIn('statut', ['en_cours', 'pause'])
-            ->delete();
+        // Conserver l'historique : on n'efface plus les parties terminées.
+        // On abandonne seulement les sessions encore ouvertes sur ce territoire.
+        $this->abandonnerPartiesActives(auth()->id(), $environment->id);
 
         $game = Game::create([
             'user_id' => auth()->id(),
@@ -546,6 +537,65 @@ class GameController extends Controller
         ];
     }
 
+    /**
+     * Parties affichées sur le dashboard (synthèse joueur).
+     */
+    private function chargerPartiesJoueur()
+    {
+        return $this->requetePartiesJoueur()->map(function (Game $game) {
+            $this->synchroniserStatutPartie($game);
+
+            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
+        });
+    }
+
+    /**
+     * Historique intégral : chaque aventure conservée en base, triée de la plus récente à la plus ancienne.
+     * Plusieurs parties sur le même territoire apparaissent toutes (terminées, abandonnées, en cours…).
+     */
+    private function chargerHistoriqueJoueur()
+    {
+        return $this->requetePartiesJoueur()->map(function (Game $game) {
+            $this->synchroniserStatutPartie($game);
+
+            return $this->formaterPartiePourDashboard($game->fresh(['environment', 'enigmes']));
+        });
+    }
+
+    /**
+     * Requête commune : toutes les lignes games du joueur, sans regroupement ni limite par territoire.
+     */
+    private function requetePartiesJoueur()
+    {
+        $user = auth()->user();
+
+        return Game::where('user_id', $user->id)
+            ->when(! $user->isAdmin(), function ($query) use ($user) {
+                $query->whereIn(
+                    'environment_id',
+                    $user->invitations()->where('statut', 'used')->pluck('environment_id')
+                );
+            })
+            ->with(['environment', 'enigmes'])
+            ->orderByDesc('date_debut')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * Avant une nouvelle partie : clôturer les sessions en cours/pause sans supprimer les archives.
+     */
+    private function abandonnerPartiesActives(int $userId, int $environmentId): void
+    {
+        Game::where('user_id', $userId)
+            ->where('environment_id', $environmentId)
+            ->whereIn('statut', ['en_cours', 'pause'])
+            ->update([
+                'statut' => 'abandonnee',
+                'date_fin' => now(),
+            ]);
+    }
+
     private function formaterPartiePourDashboard(Game $game): array
     {
         $progression = $this->calculerProgression($game);
@@ -739,10 +789,14 @@ class GameController extends Controller
 
     private function modalLieuDonnees(Enigme $enigme, string $type = 'solution'): array
     {
+        $place = $enigme->place;
+
         return [
             'type' => $type,
-            'nom' => $enigme->place->nom,
-            'description' => $enigme->place->description,
+            'nom' => $place->nom,
+            'description' => $place->description,
+            'recommandation' => $place->recommandation ?? [],
+            'ressource' => $place->ressource,
         ];
     }
 

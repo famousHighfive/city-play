@@ -34,6 +34,17 @@ return new class extends Migration {
 
             /*
             |--------------------------------------------------------------------------
+            | Recommandations & ressource d'urgence
+            | recommandation : lieux conseillés autour de la place (JSON)
+            | ressource : numéro « plus d'infos » (lien tel: au joueur)
+            |--------------------------------------------------------------------------
+            */
+            $table->json('recommandation')->nullable();
+
+            $table->string('ressource', 30)->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
             | Coordonnées GPS
             |--------------------------------------------------------------------------
             */

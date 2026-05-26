@@ -46,6 +46,8 @@ Route::middleware(['auth', CheckAccessExpiration::class])->group(function (){
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [GameController::class, 'dashboard'])->name('dashboard');
+    // Historique complet de toutes les parties jouées (aucune limite par territoire)
+    Route::get('/historique', [GameController::class, 'history'])->name('game.history');
 });
 
 /*
@@ -135,6 +137,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+});
 /*
 |--------------------------------------------------------------------------
 | INVITATIONS PUBLIQUES
@@ -162,7 +165,6 @@ Route::prefix('invitation')
 
         Route::get('/{token}', [InvitationController::class, 'show'])
             ->name('show');
-    });
 
 });
 
