@@ -81,6 +81,11 @@ const props = defineProps({
                         + Énigme
                     </a>
 
+                    <a href="/events"
+                       class="px-4 py-2 rounded-xl bg-indigo-100 text-indigo-700 text-sm hover:bg-indigo-200">
+                        📅 Événements
+                    </a>
+
                 </div>
 
             </div>

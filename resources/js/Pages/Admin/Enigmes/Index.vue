@@ -18,7 +18,7 @@ const searchQuery = ref('');
 const niveauFilter = ref('all');
 const statusFilter = ref('all');
 
-const niveauxDisponibles = ['1', '2', '3', 'enfant'];
+const niveauxDisponibles = ['easy', 'medium', 'hard', 'kid'];
 
 const filteredEnigmes = computed(() => {
     return props.enigmes.filter(enigme => {
@@ -49,10 +49,10 @@ const deleteEnigme = (enigme) => {
 
 const getNiveauClass = (niveau) => {
     switch (niveau) {
-        case '1': return 'bg-green-50 text-green-700 ring-green-600/20';
-        case '2': return 'bg-blue-50 text-blue-700 ring-blue-600/20';
-        case '3': return 'bg-red-50 text-red-700 ring-red-600/20';
-        case 'enfant': return 'bg-purple-50 text-purple-700 ring-purple-600/20';
+        case 'easy': return 'bg-green-50 text-green-700 ring-green-600/20';
+        case 'medium': return 'bg-blue-50 text-blue-700 ring-blue-600/20';
+        case 'hard': return 'bg-red-50 text-red-700 ring-red-600/20';
+        case 'kid': return 'bg-purple-50 text-purple-700 ring-purple-600/20';
         default: return 'bg-gray-50 text-gray-700 ring-gray-600/20';
     }
 };
@@ -97,7 +97,7 @@ const getNiveauClass = (niveau) => {
                             >
                                 <option value="all">Tous les niveaux</option>
                                 <option v-for="niveau in niveauxDisponibles" :key="niveau" :value="niveau">
-                                    {{ niveau === 'enfant' ? 'Enfant' : 'Niveau ' + niveau }}
+                                    {{ niveau === 'kid' ? 'kid' : 'Niveau ' + niveau }}
                                 </option>
                             </select>
                             <select 
