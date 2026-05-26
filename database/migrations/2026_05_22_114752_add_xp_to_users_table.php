@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->integer('xp')->default(0)->after('role');
-            $table->integer('level')->default(1)->after('xp');
+            $table->integer('xp')->default(0)->after('role');  // stocke le niveau actuel du joueur (calculé à partir de l'XP).
+            $table->integer('level')->default(1)->after('xp'); // stocke le niveau actuel du joueur (calculé à partir de l'XP).
         });
     }
 

@@ -11,6 +11,12 @@ const props = defineProps({
 
 const audioStore = useAudioStore();
 
+const isMuted = ref(false);
+const toggleMute = () => {
+    isMuted.value = !isMuted.value;
+    audioStore.isMuted = isMuted.value;
+};
+
 const currentPhase = ref('loading');
 const showContinueButton = ref(false);
 const loadingProgress = ref(0);
@@ -176,7 +182,7 @@ onUnmounted(() => {
                     
                     <!-- Weather panel -->
                     <div class="absolute top-6 right-6 pointer-events-auto">
-                        <div class="bg-slate-800/80 backdrop-blur-xl rounded-2xl p-5 shadow-xl border border-slate-700/50 min-w-[200px]">
+                        <div class="bg-slate-800/90 backdrop-blur-xl rounded-2xl p-5 shadow-2xl border border-white/10 min-w-[200px]">
                             <div class="flex items-center gap-3 mb-3">
                                 <span class="text-4xl">{{ weatherData.icon }}</span>
                                 <div>
@@ -186,6 +192,17 @@ onUnmounted(() => {
                             </div>
                             <p class="text-xs text-slate-400 leading-relaxed">{{ weatherData.ambiance }}</p>
                         </div>
+                    </div>
+
+                    <!-- Sound control button (Bottom Right) -->
+                    <div class="absolute bottom-28 right-6 pointer-events-auto">
+                        <button 
+                            @click="toggleMute"
+                            class="w-16 h-16 rounded-full bg-slate-800/90 backdrop-blur-xl border border-white/10 flex items-center justify-center text-3xl shadow-2xl hover:scale-110 transition-transform active:scale-95"
+                            :title="isMuted ? 'Activer le son' : 'Couper le son'"
+                        >
+                            <span>{{ isMuted ? '🔇' : '🔊' }}</span>
+                        </button>
                     </div>
                     
                     <!-- Bottom instruction -->

@@ -78,13 +78,6 @@ export const useGameStore = defineStore('game', () => {
 
   // Reprendre
   const resume = () => {
-    if (isPaused.value && pausedAt.value) {
-      const now = Date.now();
-      const pausedDuration = Math.floor((now - pausedAt.value) / 1000);
-      if (pausedDuration > 0) {
-        remainingSeconds.value = Math.max(0, remainingSeconds.value - pausedDuration);
-      }
-    }
     isPaused.value = false;
     pausedAt.value = null;
     saveToStorage();
