@@ -19,7 +19,13 @@ class DatabaseSeeder extends Seeder
             'name' => 'Admin',
             'email' => 'admin@gmail.com',
             'role' => 'admin',
+            'email_verified_at' => now(),
             'password' => bcrypt('12345678'),
+        ]);
+         $this->call([
+            EnvironmentSeeder::class,
+            PlaceSeeder::class,
+            EnigmeSeeder::class,
         ]);
     }
 }

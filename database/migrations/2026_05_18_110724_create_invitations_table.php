@@ -22,6 +22,8 @@ return new class extends Migration
 
             $table->string('destinataire');
 
+            $table->foreignId('player_id')->nullable()->constrained('users')->nullOnDelete();
+
             $table->string('token')->unique();
 
             $table->enum('statut', ['pending', 'used', 'expired'])

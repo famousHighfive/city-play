@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -15,12 +14,12 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('user_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->foreignId('environment_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->timestamp('date_debut');
 
@@ -28,15 +27,24 @@ return new class extends Migration
 
             $table->enum('statut', ['en_cours', 'pause', 'terminee', 'abandonnee']);
 
+            $table->enum('mode_jeu', ['equipe', 'challenge'])->default('equipe');
+
             $table->integer('nb_membres');
+
+            $table->json('participants')->nullable();
+
+            $table->string('challenger_email')->nullable();
 
             $table->integer('duree_prevue');
 
             $table->integer('duree_restante')->nullable();
 
+            $table->decimal('latitude_depart', 10, 7)->nullable();
+            $table->decimal('longitude_depart', 10, 7)->nullable();
+
             $table->enum('moyen_locomotion', ['pied', 'velo', 'voiture']);
 
-            $table->integer('niveau_difficulte');
+            $table->enum('niveau_difficulte', ['easy', 'medium', 'hard', 'kid']);
 
             $table->timestamps();
         });
